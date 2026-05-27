@@ -1,9 +1,8 @@
 extends CanvasLayer
 
 # StrategyHudShell is the first pass at a cleaner strategy-game UI architecture.
-# It intentionally sits above the legacy GameUI while the older script remains
-# available as a compatibility layer for existing signals, modal screens, and
-# gameplay callbacks.
+# It sits above the legacy GameUI while the older script remains available as a
+# compatibility layer for existing signals, modal screens, and gameplay callbacks.
 #
 # Design goals:
 # - Keep the map dominant.
@@ -11,17 +10,13 @@ extends CanvasLayer
 # - Put deep data in an inspector or modal ledger.
 # - Make actions contextual instead of exposing every system at once.
 
-const COL_BG := Color(0.035, 0.030, 0.026, 0.94)
 const COL_PANEL := Color(0.075, 0.058, 0.045, 0.92)
 const COL_PANEL_DARK := Color(0.045, 0.038, 0.034, 0.96)
 const COL_BORDER := Color(0.55, 0.42, 0.20, 0.55)
 const COL_GOLD := Color(0.95, 0.78, 0.38, 1.0)
 const COL_TEXT := Color(0.86, 0.82, 0.72, 1.0)
-const COL_MUTED := Color(0.56, 0.55, 0.50, 1.0)
 const COL_BLUE := Color(0.40, 0.58, 0.72, 1.0)
 const COL_WARN := Color(0.95, 0.58, 0.22, 1.0)
-const COL_DANGER := Color(0.82, 0.28, 0.22, 1.0)
-const COL_GOOD := Color(0.35, 0.70, 0.38, 1.0)
 
 var _legacy_ui: Node = null
 var _root: Control
@@ -81,7 +76,9 @@ func _input(event: InputEvent) -> void:
 
 func _attach_to_legacy_ui() -> void:
 	if _legacy_ui == null:
-		_legacy_ui = get_parent().get_node_or_null("GameUI")
+		var scene := get_tree().current_scene
+		if scene:
+			_legacy_ui = scene.get_node_or_null("GameUI")
 	if _legacy_ui == null:
 		return
 
@@ -304,8 +301,8 @@ func _refresh_top_bar() -> void:
 
 	if GameManager and GameManager.has_method("get_current_date_string"):
 		_date_label.text = str(GameManager.call("get_current_date_string"))
-	elif ColonyData:
-		_date_label.text = "Year %s" % str(ColonyData.get("current_year") if "current_year" in ColonyData else 1)
+	else:
+		_date_label.text = "Year 1"
 	_speed_label.text = "%sx" % str(_speed_levels[_speed_index])
 
 
@@ -469,10 +466,6 @@ func _panel(node_name: String, bg: Color, border_width: int = 1) -> PanelContain
 	style.corner_radius_top_right = 5
 	style.corner_radius_bottom_left = 5
 	style.corner_radius_bottom_right = 5
-	style.content_margin_left = 0
-	style.content_margin_right = 0
-	style.content_margin_top = 0
-	style.content_margin_bottom = 0
 	panel.add_theme_stylebox_override("panel", style)
 	return panel
 
