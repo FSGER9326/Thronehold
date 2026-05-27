@@ -1,0 +1,58 @@
+﻿[gd_resource type="Theme" load_steps=8 format=3 uid="uid://d6x7c3v5fkq8g"]
+
+[ext_resource type="FontFile" path="res://assets/fonts/PressStart2P.ttf" id="1"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.05098, 0.05098, 0.10196, 1)
+border_color = Color(0.16471, 0.16471, 0.29020, 1)
+border_width_left = 2
+border_width_right = 2
+border_width_top = 2
+border_width_bottom = 2
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_normal"]
+bg_color = Color(0.10196, 0.10196, 0.22745, 1)
+border_color = Color(0.22745, 0.22745, 0.41569, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_hover"]
+bg_color = Color(0.16471, 0.16471, 0.35294, 1)
+border_color = Color(0.22745, 0.22745, 0.41569, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn_pressed"]
+bg_color = Color(0.03922, 0.03922, 0.16471, 1)
+border_color = Color(0.22745, 0.22745, 0.41569, 1)
+border_width_left = 1
+border_width_right = 1
+border_width_top = 1
+border_width_bottom = 1
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_progress"]
+bg_color = Color(0.10196, 0.22745, 0.10196, 1)
+
+[resource]
+default_font_size = 14
+default_font = ExtResource("1")
+stylebox/panel/PanelContainer = SubResource("StyleBoxFlat_panel")
+stylebox/normal/Button = SubResource("StyleBoxFlat_btn_normal")
+stylebox/hover/Button = SubResource("StyleBoxFlat_btn_hover")
+stylebox/pressed/Button = SubResource("StyleBoxFlat_btn_pressed")
+stylebox/fill/ProgressBar = SubResource("StyleBoxFlat_progress")
+color/font_color/Button = Color(0.87843, 0.87843, 0.87843, 1)
+color/font_hover_color/Button = Color(1, 0.80000, 0.26667, 1)
+color/font_pressed_color/Button = Color(1, 0.66667, 0, 1)
+color/font_color/Label = Color(0.81569, 0.81569, 0.81569, 1)
+color/font_color/RichTextLabel = Color(0.81569, 0.81569, 0.81569, 1)
+color/default_color/RichTextLabel = Color(0.81569, 0.81569, 0.81569, 1)
+color/color/HSeparator = Color(0.16471, 0.16471, 0.29020, 1)

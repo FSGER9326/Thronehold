@@ -1,0 +1,19 @@
+# Godot
+.godot/
+*.uid
+
+# User data
+user/
+
+# Logs
+*.log
+
+# Temp
+tmp/
+*.tmp
+
+# OMO session data
+.omo/
+
+# OpenCode config (keep for subagent timeout)
+# .opencode/

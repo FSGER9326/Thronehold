@@ -1,0 +1,33 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Beryla's Dynasty — Forged to mark the rise of Beryla, chieftain of Ironhold. A symbol of new beginnings.
+[Character] Generated: Beryla (dwarf female, chieftain, age 92)
+[ArtifactManager] Created: Crown of Elara's Dynasty — Forged to mark the rise of Elara, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Elara (elf female, high_priest, age 142)
+[ArtifactManager] Created: Crown of Marcus's Dynasty — Forged to mark the rise of Marcus, high_priest of Northmark. A symbol of new beginnings.
+[Character] Generated: Marcus (human male, high_priest, age 16)
+[ArtifactManager] Created: Crown of Morg's Dynasty — Forged to mark the rise of Morg, chieftain of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Morg (orc male, chieftain, age 14)
+[ArtifactManager] Created: Crown of Hamfast's Dynasty — Forged to mark the rise of Hamfast, tyrant of Greenfields. A symbol of new beginnings.
+[Character] Generated: Hamfast (halfling male, tyrant, age 27)
+[ArtifactManager] Created: Crown of Gnasha's Dynasty — Forged to mark the rise of Gnasha, merchant_prince of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Gnasha (goblin female, merchant_prince, age 14)
+[ArtifactManager] Created: Crown of Thud's Dynasty — Forged to mark the rise of Thud, warlord of Bogmire. A symbol of new beginnings.
+[Character] Generated: Thud (troll male, warlord, age 11)
+[ArtifactManager] Created: Crown of Cog's Dynasty — Forged to mark the rise of Cog, tyrant of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Cog (gnome male, tyrant, age 25)
+[Monster] Ironhide the Venom Lord (hydra, threat 4) lairs at (57, 55)
+[Monster] Nightflare the Many-Headed (hydra, threat 4) lairs at (63, 20)
+[Monster] Dreadmaw the Land Scourge (behemoth, threat 3) lairs at (60, 48)
+[Monster] Doomhorn the Walking Cataclysm (behemoth, threat 8) lairs at (15, 35)
+[Monster] Frostbite the Earth Shaker (giant, threat 6) lairs at (64, 49)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING
+[Main] Game systems ready. 8 nations. 8 characters.
+[Main] Auto-play: world ready, time started. 8 nations.
+[Main] Screenshot captured.

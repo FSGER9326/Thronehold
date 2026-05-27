@@ -1,0 +1,8 @@
+SCRIPT ERROR: Parse Error: Function "_find_miracle_id" has the same name as a previously declared function.
+   at: GDScript::reload (res://scripts/ui/GameUI.gd:3754)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://scripts/main.gd:73)
+ERROR: Failed to load script "res://scripts/ui/GameUI.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://scripts/main.gd:73)

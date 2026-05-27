@@ -1,0 +1,152 @@
+SCRIPT ERROR: Parse Error: There is already a variable named "btn_normal" declared in this scope.
+   at: GDScript::reload (res://scripts/ui/GameUI.gd:3831)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://scripts/main.gd:73)
+ERROR: Failed to load script "res://scripts/ui/GameUI.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+   GDScript backtrace (most recent call first):
+       [0] _ready (res://scripts/main.gd:73)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/water.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/coast.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/swamp.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/desert.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/plains.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/forest.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/hills.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/caves.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/water.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/coast.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/swamp.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/desert.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/plains.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/forest.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/hills.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/tiles/caves.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _get_terrain_texture (res://scripts/systems/ChunkRenderer.gd:29)
+       [1] _fill_chunk (res://scripts/systems/ChunkRenderer.gd:102)
+       [2] _on_world_generated (res://scripts/systems/ChunkRenderer.gd:54)
+       [3] generate_world (res://scripts/systems/WorldGenerator.gd:27)
+       [4] _run_world_generation (res://scripts/main.gd:96)
+       [5] _ready (res://scripts/main.gd:78)

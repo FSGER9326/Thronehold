@@ -1,0 +1,29 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Elara's Dynasty — Forged to mark the rise of Elara, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Elara (elf female, high_priest, age 216)
+[ArtifactManager] Created: Crown of Bridget's Dynasty — Forged to mark the rise of Bridget, high_priest of Northmark. A symbol of new beginnings.
+[Character] Generated: Bridget (human female, high_priest, age 14)
+[ArtifactManager] Created: Crown of Rukhar's Dynasty — Forged to mark the rise of Rukhar, warlord of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Rukhar (orc male, warlord, age 4)
+[ArtifactManager] Created: Crown of Milo's Dynasty — Forged to mark the rise of Milo, tyrant of Greenfields. A symbol of new beginnings.
+[Character] Generated: Milo (halfling male, tyrant, age 14)
+[ArtifactManager] Created: Crown of Vexa's Dynasty — Forged to mark the rise of Vexa, tyrant of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Vexa (goblin female, tyrant, age 7)
+[ArtifactManager] Created: Crown of Morga's Dynasty — Forged to mark the rise of Morga, warlord of Bogmire. A symbol of new beginnings.
+[Character] Generated: Morga (troll female, warlord, age 13)
+[ArtifactManager] Created: Crown of Pixie's Dynasty — Forged to mark the rise of Pixie, tyrant of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Pixie (gnome female, tyrant, age 46)
+[Monster] Dreadmaw the Beast of Ruin (behemoth, threat 4) lairs at (49, 58)
+[Monster] Ironhide the Flame Tyrant (dragon, threat 8) lairs at (5, 14)
+[Monster] Nightflare the Earth Shaker (giant, threat 3) lairs at (17, 58)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING
+[Main] Game systems ready. 7 nations. 7 characters.
+[Main] Auto-play: world ready, time started. 7 nations.
+[Main] Screenshot captured.

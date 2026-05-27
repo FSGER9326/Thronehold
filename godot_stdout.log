@@ -1,0 +1,36 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Vordin's Dynasty — Forged to mark the rise of Vordin, chieftain of Ironhold. A symbol of new beginnings.
+[Character] Generated: Vordin (dwarf male, chieftain, age 83)
+[ArtifactManager] Created: Crown of Elara's Dynasty — Forged to mark the rise of Elara, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Elara (elf female, high_priest, age 87)
+[ArtifactManager] Created: Crown of Gareth's Dynasty — Forged to mark the rise of Gareth, tyrant of Northmark. A symbol of new beginnings.
+[Character] Generated: Gareth (human male, tyrant, age 30)
+[ArtifactManager] Created: Crown of Vasha's Dynasty — Forged to mark the rise of Vasha, warlord of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Vasha (orc female, warlord, age 22)
+[ArtifactManager] Created: Crown of Milo's Dynasty — Forged to mark the rise of Milo, tyrant of Greenfields. A symbol of new beginnings.
+[Character] Generated: Milo (halfling male, tyrant, age 41)
+[ArtifactManager] Created: Crown of Titch's Dynasty — Forged to mark the rise of Titch, merchant_prince of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Titch (goblin male, merchant_prince, age 11)
+[ArtifactManager] Created: Crown of Usha's Dynasty — Forged to mark the rise of Usha, warlord of Bogmire. A symbol of new beginnings.
+[Character] Generated: Usha (troll female, warlord, age 9)
+[ArtifactManager] Created: Crown of Pixie's Dynasty — Forged to mark the rise of Pixie, merchant_prince of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Pixie (gnome female, merchant_prince, age 18)
+[Monster] Ironhide the Beast of Ruin (behemoth, threat 10) lairs at (63, 35)
+[Monster] Magmawrath the Earth Shaker (giant, threat 3) lairs at (1, 37)
+[Monster] Stormrage the Flame Tyrant (dragon, threat 9) lairs at (65, 23)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING
+[Main] Game systems ready. 8 nations. 8 characters.
+[Main] Auto-play: world ready, time started. 8 nations.
+[Main] Screenshot captured.
+[GameManager] PLAYING -> EVENT_DIALOG
+[AI] Deepgrot Tribe raids Silverwood for food
+[AI] Bogmire raids Northmark for food
+[AI] Deepgrot Tribe raids Silverwood for food
+[AI] Bogmire raids Northmark for food

@@ -1,0 +1,7 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/ui/ui_parchment.jpg'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _create_main_menu_screen (res://scripts/ui/GameUI.gd:504)
+       [1] _build_ui (res://scripts/ui/GameUI.gd:337)
+       [2] _ready (res://scripts/ui/GameUI.gd:20)
+       [3] _ready (res://scripts/main.gd:74)

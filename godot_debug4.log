@@ -1,0 +1,28 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Orophin's Dynasty — Forged to mark the rise of Orophin, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Orophin (elf male, high_priest, age 245)
+[ArtifactManager] Created: Crown of Cedric's Dynasty — Forged to mark the rise of Cedric, warlord of Northmark. A symbol of new beginnings.
+[Character] Generated: Cedric (human male, warlord, age 17)
+[ArtifactManager] Created: Crown of Rukhar's Dynasty — Forged to mark the rise of Rukhar, tyrant of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Rukhar (orc male, tyrant, age 20)
+[ArtifactManager] Created: Crown of Camellia's Dynasty — Forged to mark the rise of Camellia, merchant_prince of Greenfields. A symbol of new beginnings.
+[Character] Generated: Camellia (halfling female, merchant_prince, age 43)
+[ArtifactManager] Created: Crown of Zog's Dynasty — Forged to mark the rise of Zog, tyrant of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Zog (goblin male, tyrant, age 6)
+[ArtifactManager] Created: Crown of Grak's Dynasty — Forged to mark the rise of Grak, chieftain of Bogmire. A symbol of new beginnings.
+[Character] Generated: Grak (troll male, chieftain, age 15)
+[ArtifactManager] Created: Crown of Thog's Dynasty — Forged to mark the rise of Thog, tyrant of Highpeak. A symbol of new beginnings.
+[Character] Generated: Thog (ogre male, tyrant, age 42)
+[ArtifactManager] Created: Crown of Bix's Dynasty — Forged to mark the rise of Bix, merchant_prince of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Bix (gnome male, merchant_prince, age 15)
+[Monster] Magmawrath the Serpent Queen (hydra, threat 1) lairs at (4, 23)
+[Monster] Thunderclaw the Unstoppable (behemoth, threat 7) lairs at (62, 30)
+[Monster] Bonecrush the Mountain Breaker (giant, threat 6) lairs at (47, 44)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING

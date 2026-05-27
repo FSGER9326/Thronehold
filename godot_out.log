@@ -1,0 +1,33 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Freyja's Dynasty — Forged to mark the rise of Freyja, chieftain of Ironhold. A symbol of new beginnings.
+[Character] Generated: Freyja (dwarf female, chieftain, age 66)
+[ArtifactManager] Created: Crown of Nimue's Dynasty — Forged to mark the rise of Nimue, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Nimue (elf female, high_priest, age 178)
+[ArtifactManager] Created: Crown of Cedric's Dynasty — Forged to mark the rise of Cedric, warlord of Northmark. A symbol of new beginnings.
+[Character] Generated: Cedric (human male, warlord, age 15)
+[ArtifactManager] Created: Crown of Zarna's Dynasty — Forged to mark the rise of Zarna, tyrant of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Zarna (orc female, tyrant, age 15)
+[ArtifactManager] Created: Crown of Pearl's Dynasty — Forged to mark the rise of Pearl, tyrant of Greenfields. A symbol of new beginnings.
+[Character] Generated: Pearl (halfling female, tyrant, age 21)
+[ArtifactManager] Created: Crown of Skiv's Dynasty — Forged to mark the rise of Skiv, merchant_prince of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Skiv (goblin male, merchant_prince, age 9)
+[ArtifactManager] Created: Crown of Krom's Dynasty — Forged to mark the rise of Krom, warlord of Bogmire. A symbol of new beginnings.
+[Character] Generated: Krom (troll female, warlord, age 34)
+[ArtifactManager] Created: Crown of Widget's Dynasty — Forged to mark the rise of Widget, merchant_prince of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Widget (gnome female, merchant_prince, age 37)
+[Monster] Doomhorn the Land Scourge (behemoth, threat 4) lairs at (65, 12)
+[Monster] Thunderclaw the Walking Cataclysm (behemoth, threat 5) lairs at (16, 51)
+[Monster] Ironhide the Serpent Queen (hydra, threat 2) lairs at (17, 59)
+[Monster] Bonecrush the Poison Tide (hydra, threat 3) lairs at (54, 59)
+[Monster] Shadowmaw the Poison Tide (hydra, threat 9) lairs at (63, 32)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING
+[Main] Game systems ready. 8 nations. 8 characters.
+[Main] Auto-play: world ready, time started. 8 nations.
+[Main] Screenshot captured.

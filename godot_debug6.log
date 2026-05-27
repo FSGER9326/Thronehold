@@ -1,0 +1,33 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+Vulkan 1.2.131 - Forward Mobile - Using Device #0: Intel - Intel(R) HD Graphics 620
+
+[Debug] Startup checks: 4 passed, 0 failed[0m
+[Main] Initializing game systems...
+[ArtifactManager] Ready — listening for legendary events
+[Main] Generating world...
+[ArtifactManager] Created: Crown of Thora's Dynasty — Forged to mark the rise of Thora, chieftain of Ironhold. A symbol of new beginnings.
+[Character] Generated: Thora (dwarf female, chieftain, age 59)
+[ArtifactManager] Created: Crown of Faelan's Dynasty — Forged to mark the rise of Faelan, high_priest of Silverwood. A symbol of new beginnings.
+[Character] Generated: Faelan (elf male, high_priest, age 168)
+[ArtifactManager] Created: Crown of Gareth's Dynasty — Forged to mark the rise of Gareth, warlord of Northmark. A symbol of new beginnings.
+[Character] Generated: Gareth (human male, warlord, age 28)
+[ArtifactManager] Created: Crown of Drakk's Dynasty — Forged to mark the rise of Drakk, tyrant of Bloodfang Clan. A symbol of new beginnings.
+[Character] Generated: Drakk (orc male, tyrant, age 11)
+[ArtifactManager] Created: Crown of Elanor's Dynasty — Forged to mark the rise of Elanor, tyrant of Greenfields. A symbol of new beginnings.
+[Character] Generated: Elanor (halfling female, tyrant, age 31)
+[ArtifactManager] Created: Crown of Yik's Dynasty — Forged to mark the rise of Yik, merchant_prince of Deepgrot Tribe. A symbol of new beginnings.
+[Character] Generated: Yik (goblin female, merchant_prince, age 5)
+[ArtifactManager] Created: Crown of Grak's Dynasty — Forged to mark the rise of Grak, chieftain of Bogmire. A symbol of new beginnings.
+[Character] Generated: Grak (troll male, chieftain, age 20)
+[ArtifactManager] Created: Crown of Widget's Dynasty — Forged to mark the rise of Widget, merchant_prince of Sparkgear. A symbol of new beginnings.
+[Character] Generated: Widget (gnome female, merchant_prince, age 26)
+[Monster] Grimfang the Dread Wyrm (dragon, threat 9) lairs at (66, 46)
+[Monster] Ashwing the Many-Headed (hydra, threat 8) lairs at (5, 34)
+[Monster] Ashwing the Regenerator (hydra, threat 1) lairs at (53, 57)
+[Monster] Stormrage the Venom Lord (hydra, threat 9) lairs at (57, 15)
+[Monster] Doomhorn the Poison Tide (hydra, threat 10) lairs at (59, 34)
+[Main] Deity class selection complete. Starting world...
+[GameManager] WORLD_SETUP -> PLAYING
+[Main] Game systems ready. 8 nations. 8 characters.
+[Main] Auto-play: world ready, time started. 8 nations.
+[Main] Screenshot captured.
