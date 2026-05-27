@@ -25,6 +25,7 @@ GameManager="*res://scripts/autoload/GameManager.gd"
 EventBus="*res://scripts/autoload/EventBus.gd"
 ColonyData="*res://scripts/autoload/ColonyData.gd"
 DebugManager="*res://scripts/autoload/DebugManager.gd"
+StrategyHudShell="*res://scripts/ui/StrategyHudShell.gd"
 
 [display]
 
