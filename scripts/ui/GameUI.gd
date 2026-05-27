@@ -66,16 +66,18 @@ const UI_PARCHMENT_PATH := "res://assets/ui/ui_parchment.jpg"
 const UI_WOOD_PANEL_PATH := "res://assets/ui/ui_wood_panel.jpg"
 
 # Kenney Fantasy UI Borders (CC0) - download via download_assets.ps1
+# Textures are 48x48 grayscale pixel art designed for 9-slice with 8px margins, tinted via modulate_color
 const KENNEY_PATH := "res://assets/ui/kenney/"
-const KENNEY_PANEL_BROWN := KENNEY_PATH + "panel_brown.png"
-const KENNEY_PANEL_BEIGE := KENNEY_PATH + "panel_beige.png"
-const KENNEY_PANEL_BLUE := KENNEY_PATH + "panel_blue.png"
-const KENNEY_BUTTON_NORMAL := KENNEY_PATH + "button_blue.png"
-const KENNEY_BUTTON_PRESSED := KENNEY_PATH + "button_blue_pressed.png"
-const KENNEY_BUTTON_RED := KENNEY_PATH + "button_red.png"
-const KENNEY_BUTTON_YELLOW := KENNEY_PATH + "button_yellow.png"
-const KENNEY_BAR_BG := KENNEY_PATH + "bar_background.png"
-const KENNEY_BAR_FILL := KENNEY_PATH + "bar_fill_green.png"
+const KENNEY_PANEL_BROWN := KENNEY_PATH + "PNG/Default/Panel/panel-000.png"    # Medium gray - general panels
+const KENNEY_PANEL_BEIGE := KENNEY_PATH + "PNG/Default/Panel/panel-001.png"   # Light gray - lighter panels
+const KENNEY_PANEL_BLUE := KENNEY_PATH + "PNG/Default/Panel/panel-005.png"    # Lighter - accent panels
+const KENNEY_BUTTON_NORMAL := KENNEY_PATH + "PNG/Default/Border/panel-border-000.png"
+const KENNEY_BUTTON_PRESSED := KENNEY_PATH + "PNG/Default/Border/panel-border-003.png"
+const KENNEY_BUTTON_RED := KENNEY_PATH + "PNG/Default/Border/panel-border-005.png"
+const KENNEY_BUTTON_YELLOW := KENNEY_PATH + "PNG/Default/Border/panel-border-007.png"
+const KENNEY_BAR_BG := KENNEY_PATH + "PNG/Default/Panel/panel-030.png"
+const KENNEY_BAR_FILL := KENNEY_PATH + "PNG/Default/Panel/panel-010.png"
+const KENNEY_DIVIDER := KENNEY_PATH + "PNG/Default/Divider/divider-000.png"
 const FULLSCREEN_PANEL_KEYS := [
 	"policy_panel",
 	"skill_tree_panel",
@@ -130,7 +132,7 @@ func _build_ui() -> void:
 	top_bar.name = "TopStatusBar"
 	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top_bar.custom_minimum_size = Vector2(0, 52)
-	top_bar.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.11, 0.07, 0.045, 0.97), 16, 6))
+	top_bar.add_theme_stylebox_override("panel", _make_ui_panel_style(6, Color(0.11, 0.07, 0.045, 0.97)))
 
 	var top_hbox = HBoxContainer.new()
 	top_hbox.add_theme_constant_override("separation", 10)
@@ -247,7 +249,7 @@ func _build_ui() -> void:
 	side_panel.set_offset(SIDE_TOP, 58)
 	side_panel.set_offset(SIDE_RIGHT, -8)
 	side_panel.set_offset(SIDE_BOTTOM, -190) # Leave room for minimap
-	side_panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.96), 16, 8))
+	side_panel.add_theme_stylebox_override("panel", _make_ui_panel_style(8, Color(0.1, 0.065, 0.045, 0.96)))
 
 	# Master VBox: tab buttons on top, scrollable content below
 	var side_outer_vbox = VBoxContainer.new()
@@ -485,7 +487,7 @@ func _build_ui() -> void:
 	build_panel.set_offset(SIDE_LEFT, 8)
 	build_panel.set_offset(SIDE_TOP, 58)
 	build_panel.set_offset(SIDE_BOTTOM, -66)
-	build_panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.97), 16, 8))
+	build_panel.add_theme_stylebox_override("panel", _make_ui_panel_style(8, Color(0.1, 0.065, 0.045, 0.97)))
 	build_panel.hide()
 
 	var build_vbox = VBoxContainer.new()
@@ -546,7 +548,7 @@ func _build_ui() -> void:
 	bottom_bar.set_offset(SIDE_RIGHT, -8)
 	bottom_bar.set_offset(SIDE_BOTTOM, -8)
 	bottom_bar.custom_minimum_size = Vector2(0, 50)
-	bottom_bar.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.97), 16, 6))
+	bottom_bar.add_theme_stylebox_override("panel", _make_ui_panel_style(6, Color(0.1, 0.065, 0.045, 0.97)))
 
 	var bottom_margin = _make_margin_container(8, 6, 8, 6)
 	var bottom_scroll = ScrollContainer.new()
@@ -616,7 +618,7 @@ func _build_ui() -> void:
 	event_dlg.name = "EventDialog"
 	event_dlg.set_anchors_preset(Control.PRESET_CENTER)
 	event_dlg.custom_minimum_size = Vector2(400, 250)
-	event_dlg.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.98), 16, 12))
+	event_dlg.add_theme_stylebox_override("panel", _make_ui_panel_style(12, Color(0.1, 0.065, 0.045, 0.98)))
 	event_dlg.hide()
 
 	var event_vbox = VBoxContainer.new()
@@ -739,15 +741,20 @@ func _create_wizard_screen() -> void:
 
 	var window = PanelContainer.new()
 	window.custom_minimum_size = Vector2(820, 620)
-	var parch_tex = _load_ui_texture(UI_PARCHMENT_PATH)
-	if parch_tex:
-		var parch_style = StyleBoxTexture.new()
-		parch_style.texture = parch_tex
-		parch_style.texture_margin_left = 24
-		parch_style.texture_margin_right = 24
-		parch_style.texture_margin_top = 24
-		parch_style.texture_margin_bottom = 24
-		window.add_theme_stylebox_override("panel", parch_style)
+	# Kenney panel as warm parchment-like background for wizard
+	var wizard_bg = _make_kenney_stylebox(KENNEY_PANEL_BEIGE, 8, Color(0.95, 0.9, 0.8, 1.0), 20)
+	if wizard_bg:
+		window.add_theme_stylebox_override("panel", wizard_bg)
+	else:
+		var parch_tex = _load_ui_texture(UI_PARCHMENT_PATH)
+		if parch_tex:
+			var parch_style = StyleBoxTexture.new()
+			parch_style.texture = parch_tex
+			parch_style.texture_margin_left = 24
+			parch_style.texture_margin_right = 24
+			parch_style.texture_margin_top = 24
+			parch_style.texture_margin_bottom = 24
+			window.add_theme_stylebox_override("panel", parch_style)
 	center.add_child(window)
 
 	var margin = MarginContainer.new()
@@ -1697,12 +1704,12 @@ func _create_main_menu_screen() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.texture = _load_ui_texture(UI_PARCHMENT_PATH)
+	bg.texture = _load_ui_texture("res://assets/ui/main_menu_bg.png")
 	overlay.add_child(bg)
 
 	var shade = ColorRect.new()
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.color = Color(0.015, 0.012, 0.018, 0.42)
+	shade.color = Color(0.0, 0.0, 0.0, 0.35)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(shade)
 
@@ -1721,7 +1728,7 @@ func _create_main_menu_screen() -> void:
 	var menu_panel = PanelContainer.new()
 	menu_panel.custom_minimum_size = Vector2(460, 560)
 	# Try Kenney panel texture first, fall back to wood texture
-	var kenney_menu_panel = _make_kenney_stylebox(KENNEY_PANEL_BEIGE, 12, Color(1, 1, 1, 1), 12)
+	var kenney_menu_panel = _make_kenney_stylebox(KENNEY_PANEL_BEIGE, 8, Color(1, 1, 1, 1), 12)
 	if kenney_menu_panel:
 		menu_panel.add_theme_stylebox_override("panel", kenney_menu_panel)
 	else:
@@ -1878,18 +1885,18 @@ func _create_class_selection_screen() -> void:
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.hide()
 
-	# Parchment background
+	# Dark background
 	var bg = TextureRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	bg.texture = _load_ui_texture(UI_PARCHMENT_PATH)
+	bg.texture = _load_ui_texture("res://assets/ui/main_menu_bg.png")
 	overlay.add_child(bg)
 
 	var shade = ColorRect.new()
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.color = Color(0.015, 0.012, 0.018, 0.42)
+	shade.color = Color(0.0, 0.0, 0.0, 0.35)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(shade)
 
@@ -3806,9 +3813,7 @@ func _show_tutorial() -> void:
 
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(580, 480)
-	var panel_style = _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.98), 18, 12)
-	if panel_style:
-		panel.add_theme_stylebox_override("panel", panel_style)
+	panel.add_theme_stylebox_override("panel", _make_ui_panel_style(12, Color(0.1, 0.065, 0.045, 0.98)))
 	center.add_child(panel)
 
 	var margin = _make_margin_container(16, 12, 16, 12)
@@ -4049,7 +4054,12 @@ func _create_fullscreen_panel(title_text: String) -> PanelContainer:
 
 	var panel = PanelContainer.new()
 	panel.custom_minimum_size = Vector2(900, 620)
-	panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.98), 18, 12))
+	# Use Kenney panel texture with warm brown tint for cohesive medieval-fantasy look
+	var kenney_fs = _make_kenney_stylebox(KENNEY_PANEL_BROWN, 8, Color(0.65, 0.55, 0.35, 1.0), 12)
+	if kenney_fs:
+		panel.add_theme_stylebox_override("panel", kenney_fs)
+	else:
+		panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.98), 18, 12))
 	center.add_child(panel)
 
 	var margin = _make_margin_container(18, 16, 18, 18)
@@ -5909,6 +5919,15 @@ func _make_kenney_stylebox(path: String, margin: int = 8, modulate: Color = Colo
 	return style
 
 
+func _make_ui_panel_style(content_margin: int = 10, modulate: Color = Color(0.65, 0.55, 0.35, 1.0)) -> StyleBox:
+	# Primary: Kenney Fantasy UI panel with warm brown tint
+	var k = _make_kenney_stylebox(KENNEY_PANEL_BROWN, 8, modulate, content_margin)
+	if k:
+		return k
+	# Fallback: wood JPG texture with 9-slice
+	return _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.97), 16, content_margin)
+
+
 func _make_textured_panel_style(path: String, fallback_color: Color, texture_margin: int = 16, content_margin: int = 10) -> StyleBox:
 	var tex = _load_ui_texture(path)
 	if tex:
@@ -6145,34 +6164,14 @@ func _apply_dark_theme() -> void:
 		theme.set_font_size("font_size", "HeaderLarge", 28)
 		
 	# --- Kenney Fantasy UI textures (pixel art) ---
-	var kenney_panel = _make_kenney_stylebox(KENNEY_PANEL_BROWN, 12, Color(1, 1, 1, 1), 10)
 	var kenney_btn_normal = _make_kenney_stylebox(KENNEY_BUTTON_NORMAL, 6, Color(0.85, 0.82, 0.8))
 	var kenney_btn_hover = _make_kenney_stylebox(KENNEY_BUTTON_NORMAL, 6, Color(1.0, 0.95, 0.85))
 	var kenney_btn_pressed = _make_kenney_stylebox(KENNEY_BUTTON_PRESSED, 6, Color(0.75, 0.72, 0.7))
 	var kenney_bar_bg = _make_kenney_stylebox(KENNEY_BAR_BG, 6, Color(0.8, 0.8, 0.8))
 	var kenney_bar_fill = _make_kenney_stylebox(KENNEY_BAR_FILL, 4, Color(1, 1, 1))
 
-	# --- Panel ---
-	var panel_style: StyleBox
-	if kenney_panel:
-		panel_style = kenney_panel
-	else:
-		var wood_tex = _load_ui_texture(UI_WOOD_PANEL_PATH)
-		if wood_tex:
-			panel_style = StyleBoxTexture.new()
-			panel_style.texture = wood_tex
-			panel_style.texture_margin_left = 16
-			panel_style.texture_margin_right = 16
-			panel_style.texture_margin_top = 16
-			panel_style.texture_margin_bottom = 16
-		else:
-			var flat = StyleBoxFlat.new()
-			flat.bg_color = Color(0.1, 0.05, 0.05, 0.95)
-			flat.content_margin_left = 16
-			flat.content_margin_right = 16
-			flat.content_margin_top = 16
-			flat.content_margin_bottom = 16
-			panel_style = flat
+	# --- Panel (Kenney pixel-art texture with warm tint; falls back to wood JPG / flat) ---
+	var panel_style = _make_ui_panel_style(16, Color(0.65, 0.55, 0.35, 1.0))
 	theme.set_stylebox("panel", "PanelContainer", panel_style)
 	theme.set_stylebox("panel", "Panel", panel_style)
 
