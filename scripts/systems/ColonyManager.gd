@@ -7,7 +7,7 @@ const COLONY_THRESHOLDS: Dictionary = {
 }
 
 var _colony_tick_counter: int = 0
-const COLONY_CHECK_INTERVAL: int = 120
+const COLONY_CHECK_INTERVAL: int = 240
 var _scene_cache: Node
 
 func _ready() -> void:

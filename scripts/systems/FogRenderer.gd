@@ -11,13 +11,13 @@ extends Node2D
 # =============================================================================
 
 const VISIBILITY_RADIUS: int = 5
-const TILE_PX: int = 16
+const TILE_PX: int = 32
 const GRAD_STEPS: int = 4
 const STEP_PX: int = TILE_PX / GRAD_STEPS
 
 var _spectator_mode: bool = false
-var _fog_rects: Array[Dictionary] = []
-var _fog_rects_dirty: bool = true
+var _fog_rects_cached: Array[Dictionary] = []
+var _fog_cache_dirty: bool = true
 
 
 # Returns the visibility level at (x, y), treating out-of-bounds as visible
@@ -49,7 +49,7 @@ func _add_fog_with_gradient(ox: int, oy: int, vis: int, base_col: Color,
 	
 	# Draw solid inner core
 	if inner_w > 0 and inner_h > 0:
-		_fog_rects.append({"rect": Rect2(ox + inner_l, oy + inner_t, inner_w, inner_h), "color": base_col})
+		_fog_rects_cached.append({"rect": Rect2(ox + inner_l, oy + inner_t, inner_w, inner_h), "color": base_col})
 	
 	# Draw gradient strips along each gradient edge
 	var target_alpha = base_col.a
@@ -59,22 +59,22 @@ func _add_fog_with_gradient(ox: int, oy: int, vis: int, base_col: Color,
 		if edge_left:
 			var na = _alpha_for_vis(_get_vis_level(x - 1, y, w, h))
 			var sa = lerp(na, target_alpha, t)
-			_fog_rects.append({"rect": Rect2(ox + s * STEP_PX, oy + inner_t, STEP_PX, inner_h), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
+			_fog_rects_cached.append({"rect": Rect2(ox + s * STEP_PX, oy + inner_t, STEP_PX, inner_h), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
 		
 		if edge_right:
 			var na = _alpha_for_vis(_get_vis_level(x + 1, y, w, h))
 			var sa = lerp(na, target_alpha, t)
-			_fog_rects.append({"rect": Rect2(ox + inner_r + s * STEP_PX, oy + inner_t, STEP_PX, inner_h), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
+			_fog_rects_cached.append({"rect": Rect2(ox + inner_r + s * STEP_PX, oy + inner_t, STEP_PX, inner_h), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
 		
 		if edge_top:
 			var na = _alpha_for_vis(_get_vis_level(x, y - 1, w, h))
 			var sa = lerp(na, target_alpha, t)
-			_fog_rects.append({"rect": Rect2(ox + inner_l, oy + s * STEP_PX, inner_w, STEP_PX), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
+			_fog_rects_cached.append({"rect": Rect2(ox + inner_l, oy + s * STEP_PX, inner_w, STEP_PX), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
 		
 		if edge_bottom:
 			var na = _alpha_for_vis(_get_vis_level(x, y + 1, w, h))
 			var sa = lerp(na, target_alpha, t)
-			_fog_rects.append({"rect": Rect2(ox + inner_l, oy + inner_b + s * STEP_PX, inner_w, STEP_PX), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
+			_fog_rects_cached.append({"rect": Rect2(ox + inner_l, oy + inner_b + s * STEP_PX, inner_w, STEP_PX), "color": Color(base_col.r, base_col.g, base_col.b, sa)})
 
 
 func set_spectator_mode(enabled: bool) -> void:
@@ -132,7 +132,7 @@ func _update_visibility() -> void:
 					ColonyData.visibility_grid[idx] = 2
 
 	# Rebuild cached fog rects from visibility_grid — with gradient borders
-	_fog_rects.clear()
+	_fog_rects_cached.clear()
 	var fog_black = Color(0, 0, 0, 0.85)
 	var fog_grey = Color(0.2, 0.2, 0.2, 0.55)
 	for y in range(h):
@@ -148,7 +148,7 @@ func _update_visibility() -> void:
 					if e_l or e_r or e_t or e_b:
 						_add_fog_with_gradient(x * TILE_PX, y * TILE_PX, vis, fog_black, w, h, x, y, e_l, e_r, e_t, e_b)
 					else:
-						_fog_rects.append({"rect": Rect2(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX), "color": fog_black})
+						_fog_rects_cached.append({"rect": Rect2(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX), "color": fog_black})
 				1:
 					var e_l = x > 0 and _get_vis_level(x - 1, y, w, h) == 0
 					var e_r = x < w - 1 and _get_vis_level(x + 1, y, w, h) == 0
@@ -157,9 +157,9 @@ func _update_visibility() -> void:
 					if e_l or e_r or e_t or e_b:
 						_add_fog_with_gradient(x * TILE_PX, y * TILE_PX, vis, fog_grey, w, h, x, y, e_l, e_r, e_t, e_b)
 					else:
-						_fog_rects.append({"rect": Rect2(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX), "color": fog_grey})
+						_fog_rects_cached.append({"rect": Rect2(x * TILE_PX, y * TILE_PX, TILE_PX, TILE_PX), "color": fog_grey})
 
-	_fog_rects_dirty = true
+	_fog_cache_dirty = true
 	queue_redraw()
 
 
@@ -167,8 +167,14 @@ func _draw() -> void:
 	if _spectator_mode:
 		return
 
-	if _fog_rects.is_empty():
+	if not _fog_cache_dirty:
 		return
 
-	for entry in _fog_rects:
+	if _fog_rects_cached.is_empty():
+		_fog_cache_dirty = false
+		return
+
+	for entry in _fog_rects_cached:
 		draw_rect(entry.rect, entry.color)
+
+	_fog_cache_dirty = false

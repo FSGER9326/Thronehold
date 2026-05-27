@@ -3,6 +3,7 @@ extends Node
 
 const INTERBREEDING_CHECK_INTERVAL: int = 60
 
+var _tick_counter: int = 0
 var _subrace_tick_counter: int = 0
 var _nation_terrain_history: Dictionary = {}  # {nation_id: {terrain: consecutive_ticks}}
 
@@ -10,6 +11,10 @@ func _ready() -> void:
 	EventBus.tick_advanced.connect(_on_tick_advanced)
 
 func _on_tick_advanced(tick: int, _day: int, _season: String, _year: int) -> void:
+	_tick_counter += 1
+	if _tick_counter % 4 != 0:
+		return
+
 	for nation in ColonyData.nations:
 		_process_nation_population(nation, tick)
 	if tick % INTERBREEDING_CHECK_INTERVAL == 0:
@@ -36,10 +41,6 @@ func _process_nation_population(nation: Dictionary, tick: int) -> void:
 	# Population growth (every 60 ticks ~ 1 season)
 	if tick % 60 == 0 and nation["id"] >= 0:
 		var growth_chance = 0.15 * fertility * food_mod
-
-		# Apply difficulty growth_rate modifier
-		var diff_settings: Dictionary = ColonyData.DIFFICULTY_SETTINGS.get(ColonyData.difficulty, ColonyData.DIFFICULTY_SETTINGS["normal"])
-		growth_chance *= diff_settings.get("growth_rate", 1.0)
 
 		# Apply genetic fertility modifier if available
 		var genetic_fertility: float = 1.0

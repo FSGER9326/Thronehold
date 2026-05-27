@@ -5,6 +5,7 @@ extends Node
 
 var _active_prophets: Array[Dictionary] = []
 var _send_cooldown: int = 0
+var _tick_counter: int = 0
 const SEND_COOLDOWN: int = 60
 
 func _ready() -> void:
@@ -75,6 +76,11 @@ func recall_prophet(target_nation_id: int) -> bool:
 
 func _on_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> void:
 	_send_cooldown -= 1
+	_tick_counter += 1
+
+	# Prophet belief spread and martyrdom checks every 4 ticks
+	if _tick_counter % 4 != 0:
+		return
 
 	for p in _active_prophets:
 		if not p["alive"]:

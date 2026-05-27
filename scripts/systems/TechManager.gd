@@ -8,6 +8,7 @@ extends Node
 var research_points: Dictionary = {}
 var unlocked_techs: Dictionary = {}
 var current_era: Dictionary = {}
+var _tick_counter: int = 0
 
 # =============================================================================
 # LIFECYCLE
@@ -17,6 +18,10 @@ func _ready() -> void:
 	EventBus.tick_advanced.connect(_on_tick_advanced)
 
 func _on_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> void:
+	_tick_counter += 1
+	if _tick_counter % 4 != 0:
+		return
+
 	for nation in ColonyData.nations:
 		var nid: int = nation["id"]
 		if not research_points.has(nid):

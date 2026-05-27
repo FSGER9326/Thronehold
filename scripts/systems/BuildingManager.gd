@@ -2,7 +2,7 @@ class_name BuildingManager
 extends Node
 
 var _ai_build_tick_counter: int = 0
-const AI_BUILD_INTERVAL: int = 120
+const AI_BUILD_INTERVAL: int = 240
 var _scene_cache: Node
 var _building_counts: Dictionary = {}
 var _territory_counts: Dictionary = {}

@@ -405,13 +405,16 @@ func _refresh_overlay() -> void:
 
 	# FPS
 	if _fps_label:
+		var fps = Engine.get_frames_per_second()
 		_fps_label.text = "FPS: %.0f | Tick: %d | Year: %d %s D%d" % [
-			Engine.get_frames_per_second(),
+			fps,
 			ColonyData.current_tick,
 			ColonyData.current_year,
 			ColonyData.current_season,
 			ColonyData.current_day
 		]
+		if fps < 30.0 and fps > 0.0:
+			_log("[WARN] FPS dropped to %.0f — performance degradation detected" % fps)
 
 	# Console
 	if _console_text:

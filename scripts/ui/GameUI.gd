@@ -13,10 +13,69 @@ var _scene_cache: Node
 var _current_game_tick: int = 0
 var _showing_underground: bool = false
 var _log_filter: String = ""
+
+# DF-inspired: persistent tooltip label in top bar
+var _tooltip_label: Label
+# DF-inspired: modeless info panel (quarter-screen, side-docked)
+var _info_panel: PanelContainer
+var _info_panel_content: RichTextLabel
+# DF-inspired: paused indicator with pulsing
+var _paused_indicator: Label
+var _paused_indicator_tween: Tween
+# DF-inspired: single-step button (advances 1 tick while paused)
+var _single_step_btn: Button
 var _refreshing_pantheon: bool = false
+var _updating_pantheon_sliders: bool = false
+var _pantheon_sliders: Dictionary = {}
+var _toast_queue: Array[Dictionary] = []
+var _active_toasts: int = 0
+const MAX_VISIBLE_TOASTS := 3
+# UI refresh throttling — full panel rebuilds are expensive, throttle to every N ticks
+var _ui_refresh_counter: int = 0
+var _ui_dirty: bool = true
+const UI_REFRESH_INTERVAL: int = 5
+
+# Wizard state
+var _wizard_step: int = 0
+var _wizard_data: Dictionary = {}
+var _wizard_overlay: PanelContainer = null
+var _wizard_step_nodes: Array[Control] = []
+var _wizard_minimap_selected: Vector2i = Vector2i(-1, -1)
+var _wizard_world_generated: bool = false
+
+const WIZARD_MAP_SIZES: Dictionary = {
+	"small": [200, 150],
+	"medium": [400, 300],
+	"large": [600, 450],
+	"huge": [800, 600],
+}
+
+const WIZARD_MAP_SIZE_NAMES: Dictionary = {
+	"small": "Small (200×150)",
+	"medium": "Medium (400×300)",
+	"large": "Large (600×450)",
+	"huge": "Huge (800×600)",
+}
+
+const WIZARD_WORLD_TYPES: Array[String] = ["continents", "islands", "pangaea", "archipelago"]
+const WIZARD_DENSITIES: Array[String] = ["sparse", "normal", "dense"]
+const WIZARD_RESOURCE_AMOUNTS: Array[String] = ["standard", "abundant", "scarce"]
+const WIZARD_EVENT_FREQUENCIES: Array[String] = ["rare", "normal", "frequent"]
 
 const UI_PARCHMENT_PATH := "res://assets/ui/ui_parchment.jpg"
 const UI_WOOD_PANEL_PATH := "res://assets/ui/ui_wood_panel.jpg"
+
+# Kenney Fantasy UI Borders (CC0) - download via download_assets.ps1
+const KENNEY_PATH := "res://assets/ui/kenney/"
+const KENNEY_PANEL_BROWN := KENNEY_PATH + "panel_brown.png"
+const KENNEY_PANEL_BEIGE := KENNEY_PATH + "panel_beige.png"
+const KENNEY_PANEL_BLUE := KENNEY_PATH + "panel_blue.png"
+const KENNEY_BUTTON_NORMAL := KENNEY_PATH + "button_blue.png"
+const KENNEY_BUTTON_PRESSED := KENNEY_PATH + "button_blue_pressed.png"
+const KENNEY_BUTTON_RED := KENNEY_PATH + "button_red.png"
+const KENNEY_BUTTON_YELLOW := KENNEY_PATH + "button_yellow.png"
+const KENNEY_BAR_BG := KENNEY_PATH + "bar_background.png"
+const KENNEY_BAR_FILL := KENNEY_PATH + "bar_fill_green.png"
 const FULLSCREEN_PANEL_KEYS := [
 	"policy_panel",
 	"skill_tree_panel",
@@ -52,12 +111,10 @@ func _input(event: InputEvent) -> void:
 				if p is PanelContainer and p.visible:
 					p.hide()
 					return
-			var class_select = _panels.get("class_select")
-			if class_select and class_select.visible:
-				class_select.hide()
-				var main_menu = _panels.get("main_menu")
-				if main_menu:
-					main_menu.show()
+		KEY_SPACE:
+			if GameManager.current_state == GameManager.GameState.PAUSED:
+				_on_pause_pressed()
+				get_viewport().set_input_as_handled()
 				return
 		KEY_PLUS, KEY_EQUAL:
 			_change_speed(1)
@@ -65,8 +122,8 @@ func _input(event: InputEvent) -> void:
 			_change_speed(-1)
 
 func _build_ui() -> void:
-	# --- Class selection overlay (shown at game start) ---
-	_create_class_selection_screen()
+	# --- New Game wizard overlay (shown at game start) ---
+	_create_wizard_screen()
 
 	# --- Top bar ---
 	var top_bar = PanelContainer.new()
@@ -89,6 +146,7 @@ func _build_ui() -> void:
 	res_text.custom_minimum_size = Vector2(560, 28)
 	res_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	res_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	res_text.tooltip_text = "Current resource amounts for your nation"
 	top_hbox.add_child(res_text)
 	_panels["resources"] = res_text
 	
@@ -98,6 +156,7 @@ func _build_ui() -> void:
 	date_label.name = "DateLabel"
 	date_label.text = "Year 1, Spring - Day 1"
 	date_label.custom_minimum_size = Vector2(200, 0)
+	date_label.tooltip_text = "Current in-game date and season"
 	date_label.add_theme_color_override("font_color", Color("#f1d891"))
 	top_hbox.add_child(date_label)
 	_panels["date"] = date_label
@@ -107,6 +166,7 @@ func _build_ui() -> void:
 	var pause_btn = Button.new()
 	pause_btn.text = "Pause"
 	pause_btn.custom_minimum_size = Vector2(86, 34)
+	pause_btn.tooltip_text = "Pause/Resume time"
 	pause_btn.pressed.connect(_on_pause_pressed)
 	top_hbox.add_child(pause_btn)
 	_panels["pause"] = pause_btn
@@ -114,6 +174,7 @@ func _build_ui() -> void:
 	var speed_down = Button.new()
 	speed_down.text = "<"
 	speed_down.custom_minimum_size = Vector2(36, 34)
+	speed_down.tooltip_text = "Decrease game speed"
 	speed_down.pressed.connect(func(): _change_speed(-1))
 	top_hbox.add_child(speed_down)
 
@@ -122,6 +183,7 @@ func _build_ui() -> void:
 	speed_label.text = "Speed: 1.0x"
 	speed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	speed_label.custom_minimum_size = Vector2(90, 0)
+	speed_label.tooltip_text = "Current game speed multiplier"
 	speed_label.add_theme_color_override("font_color", Color("#d8b458"))
 	top_hbox.add_child(speed_label)
 	_panels["speed"] = speed_label
@@ -129,8 +191,47 @@ func _build_ui() -> void:
 	var speed_up = Button.new()
 	speed_up.text = ">"
 	speed_up.custom_minimum_size = Vector2(36, 34)
+	speed_up.tooltip_text = "Increase game speed"
 	speed_up.pressed.connect(func(): _change_speed(1))
 	top_hbox.add_child(speed_up)
+
+	# --- DF-inspired Single Step button (visible when paused) ---
+	_single_step_btn = Button.new()
+	_single_step_btn.text = ">|"
+	_single_step_btn.custom_minimum_size = Vector2(36, 34)
+	_single_step_btn.tooltip_text = "Advance 1 tick while paused (single step)"
+	_single_step_btn.pressed.connect(_on_single_step_pressed)
+	_single_step_btn.hide()
+	_single_step_btn.add_theme_color_override("font_color", Color("#88dd88"))
+	top_hbox.add_child(_single_step_btn)
+	_panels["single_step"] = _single_step_btn
+
+	var save_btn = Button.new()
+	save_btn.text = "Save"
+	save_btn.custom_minimum_size = Vector2(70, 0)
+	save_btn.pressed.connect(_on_save_pressed)
+	top_hbox.add_child(save_btn)
+	_panels["save"] = save_btn
+
+	var home_btn = Button.new()
+	home_btn.text = "Home"
+	home_btn.custom_minimum_size = Vector2(70, 0)
+	home_btn.tooltip_text = "Center camera on your capital (SPACE)"
+	home_btn.pressed.connect(_on_home_pressed)
+	top_hbox.add_child(home_btn)
+	_panels["home"] = home_btn
+
+	# --- DF-style persistent tooltip label (always visible, updates on hover) ---
+	_tooltip_label = Label.new()
+	_tooltip_label.name = "TooltipLabel"
+	_tooltip_label.text = ""
+	_tooltip_label.custom_minimum_size = Vector2(200, 0)
+	_tooltip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tooltip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tooltip_label.add_theme_color_override("font_color", Color("#88aacc"))
+	_tooltip_label.add_theme_font_size_override("font_size", 11)
+	top_hbox.add_child(_tooltip_label)
+	_panels["tooltip_label"] = _tooltip_label
 
 	var top_margin = _make_margin_container(12, 7, 12, 7)
 	top_margin.add_child(top_hbox)
@@ -138,7 +239,7 @@ func _build_ui() -> void:
 	add_child(top_bar)
 	_panels["top_bar"] = top_bar
 
-	# --- Outliner (Right Panel) ---
+	# --- Outliner (Right Panel) with tabbed layout ---
 	var side_panel = PanelContainer.new()
 	side_panel.name = "OutlinerPanel"
 	side_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
@@ -148,16 +249,56 @@ func _build_ui() -> void:
 	side_panel.set_offset(SIDE_BOTTOM, -190) # Leave room for minimap
 	side_panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.96), 16, 8))
 
+	# Master VBox: tab buttons on top, scrollable content below
+	var side_outer_vbox = VBoxContainer.new()
+	side_outer_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_outer_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	side_outer_vbox.add_theme_constant_override("separation", 4)
+
+	# --- Tab buttons ---
+	var tab_hbox = HBoxContainer.new()
+	tab_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var tab_data = [
+		{"key": "nation", "label": "Nation"},
+		{"key": "deity", "label": "Deity"},
+		{"key": "tile", "label": "Tile"},
+	]
+	var active_tab: String = "nation"
+
+	for t in tab_data:
+		var btn = Button.new()
+		btn.text = t["label"]
+		btn.toggle_mode = true
+		btn.button_pressed = (t["key"] == active_tab)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.custom_minimum_size = Vector2(0, 26)
+		var tab_key: String = t["key"]
+		btn.pressed.connect(func():
+			_set_active_side_tab(tab_key)
+		)
+		tab_hbox.add_child(btn)
+		_panels["side_tab_btn_" + t["key"]] = btn
+
+	side_outer_vbox.add_child(tab_hbox)
+	side_outer_vbox.add_child(_make_separator())
+
+	# --- Scrollable content area ---
 	var side_scroll = ScrollContainer.new()
 	side_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	side_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var side_vbox = VBoxContainer.new()
-	side_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	side_vbox.add_theme_constant_override("separation", 8)
-	side_scroll.add_child(side_vbox)
+	var side_inner_vbox = VBoxContainer.new()
+	side_inner_vbox.name = "SidePanelContent"
+	side_inner_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_inner_vbox.add_theme_constant_override("separation", 8)
+	side_scroll.add_child(side_inner_vbox)
 
-	var stats_label = _make_section_header("Nation")
-	side_vbox.add_child(stats_label)
+	# === NATION TAB ===
+	var nation_container = VBoxContainer.new()
+	nation_container.name = "NationTab"
+	nation_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	nation_container.add_child(_make_section_header("Nation"))
 
 	var leader_hbox = HBoxContainer.new()
 	leader_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -180,7 +321,7 @@ func _build_ui() -> void:
 
 	leader_hbox.add_child(_make_spacer())
 
-	side_vbox.add_child(leader_hbox)
+	nation_container.add_child(leader_hbox)
 	_panels["leader_portrait"] = leader_portrait
 	_panels["leader_name"] = leader_name_label
 
@@ -188,52 +329,153 @@ func _build_ui() -> void:
 	stats_text.name = "StatsText"
 	stats_text.bbcode_enabled = true
 	stats_text.fit_content = true
-	side_vbox.add_child(stats_text)
+	nation_container.add_child(stats_text)
 	_panels["stats"] = stats_text
 
-	side_vbox.add_child(_make_separator())
+	nation_container.add_child(_make_separator())
+
+	# --- Threat Level display (DF-style diegetic threat) ---
+	var threat_label = Label.new()
+	threat_label.name = "ThreatLabel"
+	threat_label.text = "Threat Level: --"
+	threat_label.add_theme_color_override("font_color", Color("#ffaa44"))
+	nation_container.add_child(threat_label)
+	_panels["threat_label"] = threat_label
+
+	var threat_bar_bg = PanelContainer.new()
+	threat_bar_bg.name = "ThreatBarBg"
+	threat_bar_bg.custom_minimum_size = Vector2(0, 8)
+	var bar_bg_style = StyleBoxFlat.new()
+	bar_bg_style.bg_color = Color(0.15, 0.15, 0.15)
+	threat_bar_bg.add_theme_stylebox_override("panel", bar_bg_style)
+
+	var threat_bar_fill = ColorRect.new()
+	threat_bar_fill.name = "ThreatBarFill"
+	threat_bar_fill.color = Color(0.2, 0.7, 0.2)  # Green = low threat
+	threat_bar_fill.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	threat_bar_bg.add_child(threat_bar_fill)
+	nation_container.add_child(threat_bar_bg)
+	_panels["threat_bar_fill"] = threat_bar_fill
+
+	var threat_details = RichTextLabel.new()
+	threat_details.name = "ThreatDetails"
+	threat_details.bbcode_enabled = true
+	threat_details.fit_content = true
+	nation_container.add_child(threat_details)
+	_panels["threat_details"] = threat_details
+
+	nation_container.add_child(_make_separator())
 
 	var artifacts_label = _make_section_header("Artifacts")
-	side_vbox.add_child(artifacts_label)
+	nation_container.add_child(artifacts_label)
 
 	var artifacts_text = RichTextLabel.new()
 	artifacts_text.name = "ArtifactsText"
 	artifacts_text.bbcode_enabled = true
 	artifacts_text.fit_content = true
 	artifacts_text.custom_minimum_size = Vector2(0, 60)
-	side_vbox.add_child(artifacts_text)
+	nation_container.add_child(artifacts_text)
 	_panels["artifacts"] = artifacts_text
 
-	side_vbox.add_child(_make_separator())
+	side_inner_vbox.add_child(nation_container)
+	_panels["tab_nation"] = nation_container
 
-	var deity_label = _make_section_header("Deity")
-	side_vbox.add_child(deity_label)
+	# === DEITY TAB ===
+	var deity_container = VBoxContainer.new()
+	deity_container.name = "DeityTab"
+	deity_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	deity_container.hide()
+
+	deity_container.add_child(_make_section_header("Deity"))
 
 	var deity_text = RichTextLabel.new()
 	deity_text.name = "DeityText"
 	deity_text.bbcode_enabled = true
 	deity_text.fit_content = true
-	side_vbox.add_child(deity_text)
+	deity_container.add_child(deity_text)
 	_panels["deity"] = deity_text
 
-	side_vbox.add_child(_make_separator())
+	side_inner_vbox.add_child(deity_container)
+	_panels["tab_deity"] = deity_container
 
-	var tile_info_label = _make_section_header("Tile Info")
-	side_vbox.add_child(tile_info_label)
+	# === TILE TAB ===
+	var tile_container = VBoxContainer.new()
+	tile_container.name = "TileTab"
+	tile_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tile_container.hide()
+
+	tile_container.add_child(_make_section_header("Tile Info"))
 
 	var tile_info_text = RichTextLabel.new()
 	tile_info_text.name = "TileInfoText"
 	tile_info_text.bbcode_enabled = true
 	tile_info_text.fit_content = true
 	tile_info_text.custom_minimum_size = Vector2(0, 100)
-	side_vbox.add_child(tile_info_text)
+	tile_container.add_child(tile_info_text)
 	_panels["tile_info"] = tile_info_text
 
-	var side_margin = _make_margin_container(10, 10, 10, 10)
-	side_margin.add_child(side_scroll)
+	side_inner_vbox.add_child(tile_container)
+	_panels["tab_tile"] = tile_container
+
+	# Add scroll container to outer vbox (after tab buttons and separator)
+	side_outer_vbox.add_child(side_scroll)
+
+	var side_margin = _make_margin_container(8, 6, 8, 6)
+	side_margin.add_child(side_outer_vbox)
 	side_panel.add_child(side_margin)
 	add_child(side_panel)
 	_panels["side_panel"] = side_panel
+
+	# --- DF-inspired Modeless Info Panel (quarter-screen, docks to right, doesn't block map) ---
+	_info_panel = PanelContainer.new()
+	_info_panel.name = "InfoPanel"
+	_info_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	_info_panel.set_anchor(SIDE_LEFT, 0.78)
+	_info_panel.set_offset(SIDE_TOP, 58)
+	_info_panel.set_offset(SIDE_RIGHT, -8)
+	_info_panel.set_offset(SIDE_BOTTOM, -68)
+	_info_panel.custom_minimum_size = Vector2(0, 0)
+	_info_panel.hide()
+	var info_bg = StyleBoxFlat.new()
+	info_bg.bg_color = Color(0.07, 0.05, 0.035, 0.94)
+	info_bg.border_color = Color(0.4, 0.3, 0.1, 0.6)
+	info_bg.border_width_left = 1; info_bg.border_width_right = 1
+	info_bg.border_width_top = 1; info_bg.border_width_bottom = 1
+	_info_panel.add_theme_stylebox_override("panel", info_bg)
+
+	var info_vbox = VBoxContainer.new()
+	info_vbox.add_theme_constant_override("separation", 4)
+
+	var info_header = HBoxContainer.new()
+	var info_title = Label.new()
+	info_title.name = "InfoPanelTitle"
+	info_title.text = "Info"
+	info_title.add_theme_color_override("font_color", Color("#f1d891"))
+	info_title.add_theme_font_size_override("font_size", 13)
+	info_header.add_child(info_title)
+	info_header.add_child(_make_spacer())
+	var info_close = Button.new()
+	info_close.text = "X"
+	info_close.custom_minimum_size = Vector2(24, 20)
+	info_close.pressed.connect(func(): _info_panel.hide())
+	info_header.add_child(info_close)
+	info_vbox.add_child(info_header)
+
+	_info_panel_content = RichTextLabel.new()
+	_info_panel_content.name = "InfoPanelContent"
+	_info_panel_content.bbcode_enabled = true
+	_info_panel_content.fit_content = true
+	_info_panel_content.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_info_panel_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_info_panel_content.add_theme_color_override("default_color", Color("#c8c8d0"))
+	_info_panel_content.add_theme_font_size_override("font_size", 12)
+	info_vbox.add_child(_info_panel_content)
+
+	var info_margin = _make_margin_container(8, 6, 8, 6)
+	info_margin.add_child(info_vbox)
+	_info_panel.add_child(info_margin)
+	add_child(_info_panel)
+	_panels["info_panel"] = _info_panel
 
 	# --- Building selection panel (left) ---
 	var build_panel = PanelContainer.new()
@@ -254,27 +496,29 @@ func _build_ui() -> void:
 	build_vbox.add_child(_make_section_header("Construction"))
 
 	# Category tabs
-	var tab_hbox = HBoxContainer.new()
-	var categories = ["economic", "military", "religious", "infrastructure"]
+	var build_tab_hbox = HBoxContainer.new()
+	var build_categories = ["economic", "military", "religious", "infrastructure"]
 	var cat_names = {"economic": "Economic", "military": "Military", "religious": "Religious", "infrastructure": "Infrastructure"}
-	for cat in categories:
+	var cat_tips = {"economic": "Economic buildings: farms, markets, workshops", "military": "Military buildings: barracks, forts, siege works", "religious": "Religious buildings: shrines, temples, monasteries", "infrastructure": "Infrastructure: roads, aqueducts, walls"}
+	for cat in build_categories:
 		var tab_btn = Button.new()
 		tab_btn.text = cat_names[cat]
 		tab_btn.toggle_mode = true
 		tab_btn.button_pressed = (cat == _current_category)
 		tab_btn.custom_minimum_size = Vector2(0, 24)
+		tab_btn.tooltip_text = cat_tips[cat]
 		tab_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var c = cat
 		tab_btn.pressed.connect(func():
 			_current_category = c
-			for other in categories:
+			for other in build_categories:
 				var btn: Button = _panels.get("tab_" + other)
 				if btn: btn.button_pressed = (other == c)
 			_refresh_building_selection()
 		)
-		tab_hbox.add_child(tab_btn)
+		build_tab_hbox.add_child(tab_btn)
 		_panels["tab_" + cat] = tab_btn
-	build_vbox.add_child(tab_hbox)
+	build_vbox.add_child(build_tab_hbox)
 	build_vbox.add_child(_make_separator())
 
 	# Scrollable building list
@@ -318,6 +562,7 @@ func _build_ui() -> void:
 	build_btn.text = "Build"
 	build_btn.add_theme_font_size_override("font_size", 14)
 	build_btn.custom_minimum_size = Vector2(104, 36)
+	build_btn.tooltip_text = "Open building construction menu"
 	build_btn.pressed.connect(_toggle_placement_mode)
 	build_btn.mouse_entered.connect(func():
 		build_btn.add_theme_color_override("font_color", Color("#ffd700"))
@@ -328,34 +573,37 @@ func _build_ui() -> void:
 	bottom_hbox.add_child(build_btn)
 	_panels["build_btn"] = build_btn
 
-	var tabs = [
-		{"name": "Policies", "action": _open_policy_panel},
-		{"name": "Skill Tree", "action": _open_skill_tree_panel},
-		{"name": "Influence", "action": _open_influence_panel},
-		{"name": "Pantheon", "action": _open_pantheon_panel},
-		{"name": "Prophets", "action": _open_prophet_panel},
-		{"name": "Culture", "action": _open_culture_panel},
-		{"name": "History", "action": _open_history_panel},
-		{"name": "Diplomacy", "action": _open_diplomacy_panel},
-		{"name": "Miracles", "action": _open_deity_miracles_panel},
-		{"name": "Factions", "action": _open_factions_panel},
-		{"name": "Government", "action": _open_government_panel},
-		{"name": "Technologies", "action": _open_tech_tree_panel},
-		{"name": "Log", "action": _open_log_panel},
+	var categories = [
+		{"name": "Faith", "items": ["Pantheon", "Prophets", "Miracles"], "actions": [_open_pantheon_panel, _open_prophet_panel, _open_deity_miracles_panel], "tooltips": ["Manage divine aspects and worship", "Send and recall prophets", "Cast divine miracles"], "hint": "Religious powers and divine influence"},
+		{"name": "Civics", "items": ["Policies", "Government", "Diplomacy"], "actions": [_open_policy_panel, _open_government_panel, _open_diplomacy_panel], "tooltips": ["Enact and revoke national policies", "View and reform government type", "Conduct diplomacy with other nations"], "hint": "Government, policies, and diplomacy"},
+		{"name": "Progress", "items": ["Technologies", "Skill Tree", "Culture"], "actions": [_open_tech_tree_panel, _open_skill_tree_panel, _open_culture_panel], "tooltips": ["Research new technologies and advance eras", "Unlock divine skills and abilities", "View and encourage cultural traits"], "hint": "Technology, skills, and cultural development"},
+		{"name": "World", "items": ["History", "Log", "Factions"], "actions": [_open_history_panel, _open_log_panel, _open_factions_panel], "tooltips": ["View world history and ancient records", "Browse event log and notifications", "View and interact with active factions"], "hint": "History, events, and factions"},
+		{"name": "Actions", "items": ["Build", "Influence"], "actions": [_toggle_placement_mode, _open_influence_panel], "tooltips": ["Enter building placement mode", "Exert divine influence over nations"], "hint": "Build structures and influence nations"},
 	]
-	for tab in tabs:
-		var btn = Button.new()
-		btn.text = tab["name"]
-		btn.add_theme_font_size_override("font_size", 12)
-		btn.custom_minimum_size = Vector2(104, 36)
-		btn.pressed.connect(tab["action"])
-		btn.mouse_entered.connect(func():
-			btn.add_theme_color_override("font_color", Color("#ffd700"))
+	for cat in categories:
+		var menu_btn = MenuButton.new()
+		menu_btn.text = cat["name"]
+		menu_btn.tooltip_text = cat["hint"]
+		menu_btn.add_theme_font_size_override("font_size", 14)
+		menu_btn.custom_minimum_size = Vector2(128, 36)
+		var popup = menu_btn.get_popup()
+		var items: Array = cat["items"]
+		var actions: Array = cat["actions"]
+		var item_tooltips: Array = cat["tooltips"]
+		for j in range(items.size()):
+			popup.add_item(items[j])
+			popup.set_item_tooltip(j, item_tooltips[j])
+		popup.index_pressed.connect(func(index: int):
+			if index >= 0 and index < actions.size():
+				actions[index].call()
 		)
-		btn.mouse_exited.connect(func():
-			btn.remove_theme_color_override("font_color")
+		menu_btn.mouse_entered.connect(func():
+			menu_btn.add_theme_color_override("font_color", Color("#ffd700"))
 		)
-		bottom_hbox.add_child(btn)
+		menu_btn.mouse_exited.connect(func():
+			menu_btn.remove_theme_color_override("font_color")
+		)
+		bottom_hbox.add_child(menu_btn)
 
 	bottom_scroll.add_child(bottom_hbox)
 	bottom_margin.add_child(bottom_scroll)
@@ -424,32 +672,73 @@ func _build_ui() -> void:
 	_panels["toast_container"] = toast_container
 	
 	_create_main_menu_screen()
+	_create_class_selection_screen()
 
 	# --- Tutorial overlay (created hidden, shown on first launch after world gen) ---
 	_create_tutorial_overlay()
 
+	# --- DF-inspired Paused Indicator (center of screen, pulsing) ---
+	_paused_indicator = Label.new()
+	_paused_indicator.name = "PausedIndicator"
+	_paused_indicator.text = "PAUSED — Issue commands, press SPACE to resume"
+	_paused_indicator.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_paused_indicator.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_paused_indicator.set_anchors_preset(Control.PRESET_CENTER)
+	_paused_indicator.set_offset(SIDE_TOP, -120)
+	_paused_indicator.add_theme_color_override("font_color", Color("#ffcc44"))
+	_paused_indicator.add_theme_font_size_override("font_size", 20)
+	_paused_indicator.add_theme_constant_override("shadow_offset_x", 2)
+	_paused_indicator.add_theme_constant_override("shadow_offset_y", 2)
+	_paused_indicator.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_paused_indicator.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_paused_indicator.hide()
+	add_child(_paused_indicator)
+	_panels["paused_indicator"] = _paused_indicator
+
+	# --- DF-inspired Tutorial Replay "?" button (always visible near minimap) ---
+	var tutorial_btn = Button.new()
+	tutorial_btn.name = "TutorialReplayBtn"
+	tutorial_btn.text = "?"
+	tutorial_btn.custom_minimum_size = Vector2(28, 28)
+	tutorial_btn.tooltip_text = "Replay tutorial"
+	tutorial_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	tutorial_btn.set_offset(SIDE_RIGHT, -10)
+	tutorial_btn.set_offset(SIDE_BOTTOM, -65)
+	tutorial_btn.add_theme_font_size_override("font_size", 16)
+	tutorial_btn.add_theme_color_override("font_color", Color("#aabbcc"))
+	var tbtn_normal = StyleBoxFlat.new()
+	tbtn_normal.bg_color = Color(0.06, 0.06, 0.12, 0.85)
+	tbtn_normal.border_color = Color(0.3, 0.3, 0.5, 0.5)
+	tbtn_normal.border_width_left = 1; tbtn_normal.border_width_right = 1
+	tbtn_normal.border_width_top = 1; tbtn_normal.border_width_bottom = 1
+	tbtn_normal.corner_radius_top_left = 14; tbtn_normal.corner_radius_top_right = 14
+	tbtn_normal.corner_radius_bottom_left = 14; tbtn_normal.corner_radius_bottom_right = 14
+	tutorial_btn.add_theme_stylebox_override("normal", tbtn_normal)
+	tutorial_btn.pressed.connect(_show_tutorial)
+	add_child(tutorial_btn)
+	_panels["tutorial_replay_btn"] = tutorial_btn
+
 	_apply_dark_theme()
 	
 	_panels["main_menu"].hide()
-	_panels["class_select"].show()
+	_panels["wizard"].show()
 
-func _create_class_selection_screen() -> void:
-	var overlay = PanelContainer.new()
-	overlay.name = "ClassSelectScreen"
-	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# Add a dark semi-transparent background
+func _create_wizard_screen() -> void:
+	_wizard_overlay = PanelContainer.new()
+	_wizard_overlay.name = "WizardScreen"
+	_wizard_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg_style = StyleBoxFlat.new()
 	bg_style.bg_color = Color(0.05, 0.05, 0.08, 1.0)
-	overlay.add_theme_stylebox_override("panel", bg_style)
-	overlay.hide()
-	_panels["class_select"] = overlay
+	_wizard_overlay.add_theme_stylebox_override("panel", bg_style)
+	_wizard_overlay.hide()
+	_panels["wizard"] = _wizard_overlay
 
 	var center = CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	overlay.add_child(center)
+	_wizard_overlay.add_child(center)
 
 	var window = PanelContainer.new()
-	window.custom_minimum_size = Vector2(700, 500)
+	window.custom_minimum_size = Vector2(820, 620)
 	var parch_tex = _load_ui_texture(UI_PARCHMENT_PATH)
 	if parch_tex:
 		var parch_style = StyleBoxTexture.new()
@@ -461,137 +750,941 @@ func _create_class_selection_screen() -> void:
 		window.add_theme_stylebox_override("panel", parch_style)
 	center.add_child(window)
 
-	var vbox = VBoxContainer.new()
 	var margin = MarginContainer.new()
 	margin.add_theme_constant_override("margin_top", 16)
 	margin.add_theme_constant_override("margin_bottom", 16)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_child(vbox)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+
+	var outer_vbox = VBoxContainer.new()
+	outer_vbox.add_theme_constant_override("separation", 8)
+
+	# --- Step Indicator ---
+	var indicator_hbox = HBoxContainer.new()
+	indicator_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	var indicator_label = Label.new()
+	indicator_label.name = "WizardIndicator"
+	indicator_label.add_theme_font_size_override("font_size", 18)
+	indicator_label.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+	indicator_hbox.add_child(indicator_label)
+	outer_vbox.add_child(indicator_hbox)
+
+	# Dots
+	var dots_hbox = HBoxContainer.new()
+	dots_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	dots_hbox.add_theme_constant_override("separation", 8)
+	for s in range(4):
+		var dot = Label.new()
+		dot.name = "WizardDot%d" % s
+		dot.add_theme_font_size_override("font_size", 20)
+		dot.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+		dots_hbox.add_child(dot)
+	outer_vbox.add_child(dots_hbox)
+
+	outer_vbox.add_child(_make_separator())
+
+	# --- Content area (stacked containers for each step) ---
+	var content_container = VBoxContainer.new()
+	content_container.name = "WizardContent"
+	content_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer_vbox.add_child(content_container)
+
+	# Build step 1-4 panels
+	_wizard_step_nodes.clear()
+	for s in range(4):
+		var step = VBoxContainer.new()
+		step.name = "WizardStep%d" % (s + 1)
+		step.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		step.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		step.hide()
+		content_container.add_child(step)
+		_wizard_step_nodes.append(step)
+
+	outer_vbox.add_child(_make_separator())
+
+	# --- Navigation bar ---
+	var nav_hbox = HBoxContainer.new()
+	var cancel_btn = Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.custom_minimum_size = Vector2(100, 34)
+	cancel_btn.pressed.connect(_wizard_cancel)
+	nav_hbox.add_child(cancel_btn)
+
+	nav_hbox.add_child(_make_spacer())
+
+	var back_btn = Button.new()
+	back_btn.name = "WizardBack"
+	back_btn.text = "Back"
+	back_btn.custom_minimum_size = Vector2(100, 34)
+	back_btn.pressed.connect(_wizard_back)
+	nav_hbox.add_child(back_btn)
+
+	var next_btn = Button.new()
+	next_btn.name = "WizardNext"
+	next_btn.text = "Next"
+	next_btn.custom_minimum_size = Vector2(140, 34)
+	next_btn.add_theme_color_override("font_color", Color("#1a1a2e"))
+	next_btn.pressed.connect(_wizard_next)
+	nav_hbox.add_child(next_btn)
+
+	outer_vbox.add_child(nav_hbox)
+
+	margin.add_child(outer_vbox)
 	window.add_child(margin)
+	add_child(_wizard_overlay)
+
+	# Build content for all steps
+	_build_wizard_step_1()
+	_build_wizard_step_2()
+	_build_wizard_step_3()
+	_build_wizard_step_4()
+
+
+func _wizard_open() -> void:
+	_wizard_step = 0
+	_wizard_data = {}
+	_wizard_minimap_selected = Vector2i(-1, -1)
+	_wizard_world_generated = false
+	_wizard_overlay.show()
+	_show_wizard_step(1)
+	GameManager.change_state(GameManager.GameState.CLASS_SELECT)
+
+
+func _wizard_cancel() -> void:
+	_wizard_overlay.hide()
+	var main_menu = _panels.get("main_menu")
+	if main_menu:
+		main_menu.show()
+	GameManager.change_state(GameManager.GameState.MAIN_MENU)
+
+
+func _wizard_back() -> void:
+	if _wizard_step <= 1:
+		return
+	_show_wizard_step(_wizard_step - 1)
+
+
+func _wizard_next() -> void:
+	var step = _wizard_step
+
+	if step == 1:
+		# Must have selected a deity
+		if not _wizard_data.has("deity_class"):
+			return
+		_show_wizard_step(2)
+
+	elif step == 2:
+		# Must have selected a race
+		if not _wizard_data.has("player_race"):
+			return
+		_show_wizard_step(3)
+
+	elif step == 3:
+		# Commit world settings and deploy deity class, then generate world
+		_commit_wizard_settings()
+		_show_wizard_step(4)
+
+	elif step == 4:
+		# Start the game
+		_wizard_finish()
+
+
+func _wizard_finish() -> void:
+	GameManager.world_setup_complete()
+	_wizard_overlay.hide()
+	_wizard_step = 0
+	_show_player_controls()
+	_refresh_all()
+	var tm = _get_time_manager()
+	if tm:
+		tm.start()
+	# Show tutorial if applicable
+	if not ColonyData.has_seen_tutorial:
+		var tutorial: CanvasLayer = _panels.get("tutorial")
+		if tutorial:
+			tutorial.show()
+			tutorial.set_process_mode(Node.PROCESS_MODE_ALWAYS)
+
+
+func _commit_wizard_settings() -> void:
+	GameManager.change_state(GameManager.GameState.WORLD_SETUP)
+
+	# Store player race
+	ColonyData.player_race = _wizard_data.get("player_race", "")
+	ColonyData.selected_race = _wizard_data.get("player_race", "")
+
+	# Apply deity class
+	var dm = _get_deity_manager()
+	if dm:
+		dm.select_class(_wizard_data.get("deity_class", ""))
+
+	# Apply world size
+	var size_key = _wizard_data.get("map_size", "medium")
+	var map_dims = WIZARD_MAP_SIZES.get(size_key, [600, 450])
+	ColonyData.world_width = map_dims[0]
+	ColonyData.world_height = map_dims[1]
+
+	# Apply other settings to ColonyData
+	ColonyData.difficulty = _wizard_data.get("difficulty", "normal")
+
+	# Trigger world generation directly
+	var wg = _get_world_generator()
+	if wg:
+		wg.generate_world(ColonyData.world_width, ColonyData.world_height)
+	else:
+		print("[GameUI] ERROR: WorldGenerator not found, falling back to EventBus")
+		GameManager.class_selection_complete()
+
+
+func _show_wizard_step(step: int) -> void:
+	_wizard_step = step
+
+	# Hide all steps
+	for s in range(_wizard_step_nodes.size()):
+		_wizard_step_nodes[s].hide()
+
+	# Show current step
+	var idx = step - 1
+	if idx >= 0 and idx < _wizard_step_nodes.size():
+		_wizard_step_nodes[idx].show()
+
+	# Update indicator
+	var indicator: Label = _wizard_overlay.find_child("WizardIndicator", true, false)
+	if indicator:
+		var step_names = ["Choose Your Deity", "Select Your Race", "World Settings", "Starting Position"]
+		indicator.text = "Step %d/4: %s" % [step, step_names[idx] if idx < step_names.size() else ""]
+
+	# Update dots
+	for s in range(4):
+		var dot = _wizard_overlay.find_child("WizardDot%d" % s, true, false)
+		if dot:
+			if s + 1 == step:
+				dot.text = "●"
+				dot.add_theme_color_override("font_color", Color("#1a1a2e"))
+			elif s + 1 < step:
+				dot.text = "◉"
+				dot.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+			else:
+				dot.text = "○"
+				dot.add_theme_color_override("font_color", Color(0.4, 0.3, 0.2))
+
+	# Update navigation buttons
+	var back_btn: Button = _wizard_overlay.find_child("WizardBack", true, false)
+	var next_btn: Button = _wizard_overlay.find_child("WizardNext", true, false)
+	if back_btn:
+		back_btn.visible = step > 1
+	if next_btn:
+		match step:
+			1: next_btn.text = "Select Deity →"
+			2: next_btn.text = "Select Race →"
+			3: next_btn.text = "Generate World →"
+			4: next_btn.text = "→ Start Game!"
+			_: next_btn.text = "Next"
+		next_btn.disabled = false
+
+	# If step 4 and world already generated, also refresh content
+	if step == 4 and _wizard_world_generated:
+		_refresh_step_4_content()
+
+
+# =============================================================================
+# STEP 1 — Deity Selection
+# =============================================================================
+
+func _build_wizard_step_1() -> void:
+	var container = _wizard_step_nodes[0]
 
 	var title = Label.new()
 	title.text = "Choose Your Divine Form"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.theme_type_variation = "HeaderLarge"
+	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
-	vbox.add_child(title)
+	container.add_child(title)
 
 	var subtitle = Label.new()
-	subtitle.text = "As a deity, your domain shapes how you interact with the mortal world."
+	subtitle.text = "Your domain shapes how you interact with the mortal world."
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD
 	subtitle.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
-	vbox.add_child(subtitle)
+	container.add_child(subtitle)
 
-	vbox.add_child(_make_separator())
-
-	# --- Difficulty selector ---
-	var diff_hbox = HBoxContainer.new()
-	diff_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	var diff_label = Label.new()
-	diff_label.text = "Difficulty: "
-	diff_label.add_theme_font_size_override("font_size", 14)
-	diff_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
-	diff_hbox.add_child(diff_label)
-	var diff_options = OptionButton.new()
-	diff_options.name = "DifficultySelect"
-	diff_options.add_item("Easy", 0)
-	diff_options.add_item("Normal", 1)
-	diff_options.add_item("Hard", 2)
-	diff_options.select(1)  # Normal default
-	diff_options.item_selected.connect(func(index: int):
-		match index:
-			0: ColonyData.difficulty = "easy"
-			1: ColonyData.difficulty = "normal"
-			2: ColonyData.difficulty = "hard"
-	)
-	diff_hbox.add_child(diff_options)
-	vbox.add_child(diff_hbox)
-
-	vbox.add_child(_make_separator())
+	container.add_child(_make_separator())
 
 	var scroll = ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var grid = GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
 
 	var dm = _get_deity_manager()
 	if not dm:
-		print("[GameUI] _create_class_selection_screen: dm is null! returning early!")
+		var err = Label.new()
+		err.text = "Error: Deity Manager not found"
+		container.add_child(err)
 		return
-	var first_choose_btn: Button = null
+
 	for class_id in dm.DEITY_CLASSES:
 		var data = dm.DEITY_CLASSES[class_id]
 		var card = PanelContainer.new()
-		card.custom_minimum_size = Vector2(300, 180)
+		card.custom_minimum_size = Vector2(320, 200)
+		var card_bg = StyleBoxFlat.new()
+		card_bg.bg_color = Color(0.08, 0.08, 0.12, 0.88)
+		card_bg.border_color = Color(0.7, 0.6, 0.3, 0.5)
+		card_bg.border_width_left = 1
+		card_bg.border_width_right = 1
+		card_bg.border_width_top = 1
+		card_bg.border_width_bottom = 1
+		card_bg.corner_radius_top_left = 4
+		card_bg.corner_radius_top_right = 4
+		card_bg.corner_radius_bottom_left = 4
+		card_bg.corner_radius_bottom_right = 4
+		card.add_theme_stylebox_override("panel", card_bg)
 
 		var card_vbox = VBoxContainer.new()
-		# --- Deity symbol centered above name ---
+		card_vbox.add_theme_constant_override("separation", 6)
+
+		# Symbol + Name row
+		var hdr_hbox = HBoxContainer.new()
+		hdr_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 		var symbol_path = "res://assets/symbols/%s.png" % class_id
 		if ResourceLoader.exists(symbol_path):
 			var sym_tex = load(symbol_path) as Texture2D
 			if sym_tex:
-				var sym_center = HBoxContainer.new()
-				sym_center.alignment = BoxContainer.ALIGNMENT_CENTER
 				var sym_rect = TextureRect.new()
 				sym_rect.texture = sym_tex
-				sym_rect.custom_minimum_size = Vector2(32, 32)
+				sym_rect.custom_minimum_size = Vector2(28, 28)
 				sym_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 				sym_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 				sym_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-				sym_center.add_child(sym_rect)
-				card_vbox.add_child(sym_center)
+				hdr_hbox.add_child(sym_rect)
+
 		var card_title = Label.new()
-		card_title.text = data["name"]
-		card_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card_title.add_theme_font_size_override("font_size", 16)
-		card_vbox.add_child(card_title)
+		card_title.text = " " + data["name"]
+		card_title.add_theme_font_size_override("font_size", 20)
+		card_title.add_theme_color_override("font_color", Color("#ffffff"))
+		hdr_hbox.add_child(card_title)
+		card_vbox.add_child(hdr_hbox)
 
 		var card_desc = Label.new()
 		card_desc.text = data["description"]
 		card_desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+		card_desc.add_theme_font_size_override("font_size", 13)
+		card_desc.add_theme_color_override("font_color", Color("#e0e0e0"))
 		card_vbox.add_child(card_desc)
 
 		var synergy = Label.new()
-		synergy.text = "Synergy: %s" % ", ".join(data["synergy_races"])
-		synergy.add_theme_color_override("font_color", Color.YELLOW)
+		var race_names = []
+		for r in data["synergy_races"]:
+			var rd = ColonyData.RACES.get(r, {})
+			race_names.append(rd.get("name", r.capitalize()))
+		synergy.text = "Synergy: %s" % ", ".join(race_names)
+		synergy.add_theme_font_size_override("font_size", 12)
+		synergy.add_theme_color_override("font_color", Color("#f0d060"))
 		card_vbox.add_child(synergy)
 
 		var passive = Label.new()
 		var passive_str = ""
 		for k in data["passive_bonus"]:
-			passive_str += "%s +%.0f%% " % [k.capitalize(), (data["passive_bonus"][k] - 1.0) * 100]
-		passive.text = "Passive: " + passive_str
-		passive.add_theme_color_override("font_color", Color.CYAN)
+			var pct = (data["passive_bonus"][k] - 1.0) * 100
+			if pct != 0:
+				passive_str += "%s +%.0f%% " % [k.capitalize(), pct]
+		passive.text = "Passive: " + passive_str.strip_edges()
+		passive.add_theme_font_size_override("font_size", 11)
+		passive.add_theme_color_override("font_color", Color("#7ac0a0"))
 		card_vbox.add_child(passive)
 
-		var choose_btn = Button.new()
-		choose_btn.text = "Choose %s" % data["name"]
-		if first_choose_btn == null:
-			first_choose_btn = choose_btn
+		card_vbox.add_child(_make_spacer())
+
+		var select_btn = Button.new()
+		select_btn.text = "Choose %s" % data["name"]
+		select_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		var cid = class_id
-		choose_btn.pressed.connect(func():
-			var dmgr = _get_deity_manager()
-			if dmgr: dmgr.select_class(cid)
-			overlay.hide()
-			GameManager.class_selection_complete()
+		select_btn.pressed.connect(func():
+			_wizard_data["deity_class"] = cid
+			_wizard_next()
 		)
-		card_vbox.add_child(choose_btn)
+		card_vbox.add_child(select_btn)
+
+		var card_margin = MarginContainer.new()
+		card_margin.add_theme_constant_override("margin_left", 10)
+		card_margin.add_theme_constant_override("margin_right", 10)
+		card_margin.add_theme_constant_override("margin_top", 8)
+		card_margin.add_theme_constant_override("margin_bottom", 8)
+		card_margin.add_child(card_vbox)
+		card.add_child(card_margin)
+		grid.add_child(card)
+
+	scroll.add_child(grid)
+	container.add_child(scroll)
+
+
+# =============================================================================
+# STEP 2 — Race Selection
+# =============================================================================
+
+func _build_wizard_step_2() -> void:
+	var container = _wizard_step_nodes[1]
+
+	var title = Label.new()
+	title.text = "Select Your Mortal Race"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+	container.add_child(title)
+
+	var subtitle = Label.new()
+	subtitle.text = "Choose the race through which you will manifest your divine will."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD
+	subtitle.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	container.add_child(subtitle)
+
+	container.add_child(_make_separator())
+
+	var scroll = ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var grid = GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+
+	# Determine synergy races from selected deity
+	var synergy_races: Array = []
+	var deity_class = _wizard_data.get("deity_class", "")
+	if deity_class != "":
+		var dm = _get_deity_manager()
+		if dm and dm.DEITY_CLASSES.has(deity_class):
+			synergy_races = dm.DEITY_CLASSES[deity_class]["synergy_races"]
+
+	# Build ordered race list: synergy first, then others
+	var race_ids: Array[String] = []
+	for r in synergy_races:
+		if not r in race_ids:
+			race_ids.append(r)
+	for r in ColonyData.RACES:
+		if not r in race_ids:
+			race_ids.append(r)
+
+	for race_id in race_ids:
+		var data = ColonyData.RACES.get(race_id, {})
+		if data.is_empty():
+			continue
+
+		var is_synergy = race_id in synergy_races
+
+		var card = PanelContainer.new()
+		card.custom_minimum_size = Vector2(240, 210)
+
+		var card_bg = StyleBoxFlat.new()
+		card_bg.bg_color = Color(1, 1, 1, 0.12)
+		card_bg.border_width_left = 1
+		card_bg.border_width_right = 1
+		card_bg.border_width_top = 1
+		card_bg.border_width_bottom = 1
+		card_bg.corner_radius_top_left = 4
+		card_bg.corner_radius_top_right = 4
+		card_bg.corner_radius_bottom_left = 4
+		card_bg.corner_radius_bottom_right = 4
+
+		if is_synergy:
+			card_bg.border_color = Color(0.2, 0.8, 0.2, 0.8)
+			card_bg.bg_color = Color(0.1, 0.4, 0.1, 0.2)
+		else:
+			card_bg.border_color = Color(0.5, 0.4, 0.15, 0.4)
+
+		card.add_theme_stylebox_override("panel", card_bg)
+
+		var card_vbox = VBoxContainer.new()
+		card_vbox.add_theme_constant_override("separation", 3)
+
+		# Name + synergy badge
+		var hdr_hbox = HBoxContainer.new()
+		var portrait_path = "res://assets/portraits/%s.png" % race_id
+		if ResourceLoader.exists(portrait_path):
+			var port_tex = load(portrait_path) as Texture2D
+			if port_tex:
+				var port_rect = TextureRect.new()
+				port_rect.texture = port_tex
+				port_rect.custom_minimum_size = Vector2(28, 28)
+				port_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				port_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				port_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+				hdr_hbox.add_child(port_rect)
+
+		var card_title = Label.new()
+		card_title.text = " %s" % data.get("name", race_id.capitalize())
+		card_title.add_theme_font_size_override("font_size", 14)
+		card_title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+		hdr_hbox.add_child(card_title)
+
+		if is_synergy:
+			var badge = Label.new()
+			badge.text = " [SYNERGY]"
+			badge.add_theme_font_size_override("font_size", 10)
+			badge.add_theme_color_override("font_color", Color("#2a8a2a"))
+			hdr_hbox.add_child(badge)
+
+		card_vbox.add_child(hdr_hbox)
+
+		var desc = Label.new()
+		desc.text = data.get("description", "")
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+		desc.add_theme_font_size_override("font_size", 10)
+		desc.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+		card_vbox.add_child(desc)
+
+		# Traits
+		var traits = data.get("traits", {})
+		var trait_parts: Array[String] = []
+		if traits.has("strength"):
+			trait_parts.append("Str %.1f" % traits["strength"])
+		if traits.has("intelligence"):
+			trait_parts.append("Int %.1f" % traits["intelligence"])
+		if traits.has("fertility"):
+			trait_parts.append("Fer %.1f" % traits["fertility"])
+		if traits.has("adaptability"):
+			trait_parts.append("Adp %.1f" % traits["adaptability"])
+		if not trait_parts.is_empty():
+			var trait_label = Label.new()
+			trait_label.text = "Traits: " + ", ".join(trait_parts)
+			trait_label.add_theme_font_size_override("font_size", 10)
+			trait_label.add_theme_color_override("font_color", Color("#5a4a2a"))
+			card_vbox.add_child(trait_label)
+
+		# Preferred biomes
+		var biomes = data.get("preferred_biomes", [])
+		if not biomes.is_empty():
+			var biome_label = Label.new()
+			var biome_names = []
+			for b in biomes:
+				biome_names.append(b.capitalize())
+			biome_label.text = "Biomes: " + ", ".join(biome_names)
+			biome_label.add_theme_font_size_override("font_size", 10)
+			biome_label.add_theme_color_override("font_color", Color("#3a6a3a"))
+			card_vbox.add_child(biome_label)
+
+		# Strategy affinity
+		var aff = data.get("strategy_affinity", {})
+		var aff_parts: Array[String] = []
+		for a in aff:
+			aff_parts.append("%s %.0f%%" % [a.capitalize(), aff[a] * 100])
+		if not aff_parts.is_empty():
+			var aff_label = Label.new()
+			aff_label.text = "Affinity: " + ", ".join(aff_parts)
+			aff_label.add_theme_font_size_override("font_size", 10)
+			aff_label.add_theme_color_override("font_color", Color("#5a3a6a"))
+			card_vbox.add_child(aff_label)
+
+		card_vbox.add_child(_make_spacer())
+
+		var select_btn = Button.new()
+		select_btn.text = "Choose %s" % data.get("name", race_id.capitalize())
+		select_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		if is_synergy:
+			select_btn.add_theme_color_override("font_color", Color("#1a1a2e"))
+			var synergy_style = StyleBoxFlat.new()
+			synergy_style.bg_color = Color(0.3, 0.7, 0.2, 0.8)
+			synergy_style.corner_radius_top_left = 3
+			synergy_style.corner_radius_top_right = 3
+			synergy_style.corner_radius_bottom_left = 3
+			synergy_style.corner_radius_bottom_right = 3
+			select_btn.add_theme_stylebox_override("normal", synergy_style)
+		var rid = race_id
+		select_btn.pressed.connect(func():
+			_wizard_data["player_race"] = rid
+			_wizard_next()
+		)
+		card_vbox.add_child(select_btn)
 
 		card.add_child(card_vbox)
 		grid.add_child(card)
 
 	scroll.add_child(grid)
-	vbox.add_child(scroll)
-	add_child(overlay)
-	if first_choose_btn:
-		first_choose_btn.grab_focus()
+	container.add_child(scroll)
+
+
+# =============================================================================
+# STEP 3 — World Settings
+# =============================================================================
+
+func _build_wizard_step_3() -> void:
+	var container = _wizard_step_nodes[2]
+
+	var title = Label.new()
+	title.text = "Configure Your World"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+	container.add_child(title)
+
+	var subtitle = Label.new()
+	subtitle.text = "Shape the land and set the challenge before you."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD
+	subtitle.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	container.add_child(subtitle)
+
+	container.add_child(_make_separator())
+
+	# Settings grid
+	var grid = GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 16)
+	grid.add_theme_constant_override("v_separation", 10)
+
+	# Map Size
+	var size_label = Label.new()
+	size_label.text = "Map Size:"
+	size_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(size_label)
+
+	var size_dropdown = OptionButton.new()
+	for k in WIZARD_MAP_SIZES:
+		var dims = WIZARD_MAP_SIZES[k]
+		size_dropdown.add_item(WIZARD_MAP_SIZE_NAMES.get(k, k), 0)
+	size_dropdown.select(2)  # Default: large
+	size_dropdown.item_selected.connect(func(idx: int):
+		var keys = WIZARD_MAP_SIZES.keys()
+		if idx >= 0 and idx < keys.size():
+			_wizard_data["map_size"] = keys[idx]
+	)
+	_wizard_data["map_size"] = "large"
+	grid.add_child(size_dropdown)
+
+	# World Type
+	var world_label = Label.new()
+	world_label.text = "World Type:"
+	world_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(world_label)
+
+	var world_dropdown = OptionButton.new()
+	for wt in WIZARD_WORLD_TYPES:
+		world_dropdown.add_item(wt.capitalize(), 0)
+	world_dropdown.select(0)
+	world_dropdown.item_selected.connect(func(idx: int):
+		if idx >= 0 and idx < WIZARD_WORLD_TYPES.size():
+			_wizard_data["world_type"] = WIZARD_WORLD_TYPES[idx]
+	)
+	_wizard_data["world_type"] = "continents"
+	grid.add_child(world_dropdown)
+
+	# Difficulty
+	var diff_label = Label.new()
+	diff_label.text = "Difficulty:"
+	diff_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(diff_label)
+
+	var diff_dropdown = OptionButton.new()
+	diff_dropdown.add_item("Easy", 0)
+	diff_dropdown.add_item("Normal", 1)
+	diff_dropdown.add_item("Hard", 2)
+	diff_dropdown.select(1)
+	diff_dropdown.item_selected.connect(func(idx: int):
+		var diff_map = ["easy", "normal", "hard"]
+		if idx >= 0 and idx < diff_map.size():
+			_wizard_data["difficulty"] = diff_map[idx]
+	)
+	_wizard_data["difficulty"] = "normal"
+	grid.add_child(diff_dropdown)
+
+	# Nation Density
+	var density_label = Label.new()
+	density_label.text = "Nation Density:"
+	density_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(density_label)
+
+	var density_dropdown = OptionButton.new()
+	for d in WIZARD_DENSITIES:
+		density_dropdown.add_item(d.capitalize(), 0)
+	density_dropdown.select(1)
+	density_dropdown.item_selected.connect(func(idx: int):
+		if idx >= 0 and idx < WIZARD_DENSITIES.size():
+			_wizard_data["nation_density"] = WIZARD_DENSITIES[idx]
+	)
+	_wizard_data["nation_density"] = "normal"
+	grid.add_child(density_dropdown)
+
+	# Starting Resources
+	var res_label = Label.new()
+	res_label.text = "Starting Resources:"
+	res_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(res_label)
+
+	var res_dropdown = OptionButton.new()
+	for r in WIZARD_RESOURCE_AMOUNTS:
+		res_dropdown.add_item(r.capitalize(), 0)
+	res_dropdown.select(0)
+	res_dropdown.item_selected.connect(func(idx: int):
+		if idx >= 0 and idx < WIZARD_RESOURCE_AMOUNTS.size():
+			_wizard_data["starting_resources"] = WIZARD_RESOURCE_AMOUNTS[idx]
+	)
+	_wizard_data["starting_resources"] = "standard"
+	grid.add_child(res_dropdown)
+
+	# Event Frequency
+	var event_label = Label.new()
+	event_label.text = "Event Frequency:"
+	event_label.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+	grid.add_child(event_label)
+
+	var event_dropdown = OptionButton.new()
+	for e in WIZARD_EVENT_FREQUENCIES:
+		event_dropdown.add_item(e.capitalize(), 0)
+	event_dropdown.select(1)
+	event_dropdown.item_selected.connect(func(idx: int):
+		if idx >= 0 and idx < WIZARD_EVENT_FREQUENCIES.size():
+			_wizard_data["event_frequency"] = WIZARD_EVENT_FREQUENCIES[idx]
+	)
+	_wizard_data["event_frequency"] = "normal"
+	grid.add_child(event_dropdown)
+
+	container.add_child(grid)
+
+	# World description hint
+	container.add_child(_make_separator())
+	var hint = Label.new()
+	hint.text = "Tip: Larger maps support more nations but may run slower. Higher difficulty scales how dangerous the world itself is — biomes, wealth, and hostile neighbors all pose greater threats."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", Color(0.3, 0.2, 0.1))
+	container.add_child(hint)
+
+
+# =============================================================================
+# STEP 4 — Starting Position (minimap preview)
+# =============================================================================
+
+func _build_wizard_step_4() -> void:
+	var container = _wizard_step_nodes[3]
+
+	var title = Label.new()
+	title.text = "Choose Your Starting Position"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+	container.add_child(title)
+
+	container.add_child(_make_separator())
+
+	# Content split: minimap on top, info below
+	var map_margin = MarginContainer.new()
+	map_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var minimap_rect = TextureRect.new()
+	minimap_rect.name = "MinimapPreview"
+	minimap_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	minimap_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	minimap_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	minimap_rect.custom_minimum_size = Vector2(400, 200)
+	minimap_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	minimap_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	# Click handling
+	minimap_rect.gui_input.connect(_on_minimap_click)
+
+	map_margin.add_child(minimap_rect)
+	container.add_child(map_margin)
+
+	container.add_child(_make_separator())
+
+	# Info area
+	var info_vbox = VBoxContainer.new()
+	info_vbox.name = "Step4Info"
+	info_vbox.custom_minimum_size = Vector2(0, 80)
+	info_vbox.add_theme_constant_override("separation", 4)
+
+	var info_label = RichTextLabel.new()
+	info_label.name = "Step4InfoText"
+	info_label.bbcode_enabled = true
+	info_label.fit_content = true
+	info_label.add_theme_color_override("default_color", Color(0.2, 0.1, 0.05))
+	info_vbox.add_child(info_label)
+
+	var auto_btn_hbox = HBoxContainer.new()
+	var auto_btn = Button.new()
+	auto_btn.name = "AutoSelectBtn"
+	auto_btn.text = "Auto-Select Best Position"
+	auto_btn.pressed.connect(_on_wizard_auto_select)
+	auto_btn_hbox.add_child(auto_btn)
+	auto_btn_hbox.add_child(_make_spacer())
+	info_vbox.add_child(auto_btn_hbox)
+
+	container.add_child(info_vbox)
+
+
+func _on_minimap_click(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var rect: TextureRect = _wizard_overlay.find_child("MinimapPreview", true, false)
+		if not rect or not rect.texture:
+			return
+
+		var local_pos = rect.get_local_mouse_position()
+		var tex_size = rect.texture.get_size()
+		if tex_size.x <= 0 or tex_size.y <= 0:
+			return
+
+		var tile_x = int((local_pos.x / rect.size.x) * ColonyData.world_width) if rect.size.x > 0 else 0
+		var tile_y = int((local_pos.y / rect.size.y) * ColonyData.world_height) if rect.size.y > 0 else 0
+
+		tile_x = clamp(tile_x, 0, ColonyData.world_width - 1)
+		tile_y = clamp(tile_y, 0, ColonyData.world_height - 1)
+
+		_wizard_minimap_selected = Vector2i(tile_x, tile_y)
+		_update_step_4_info()
+
+
+func _on_wizard_auto_select() -> void:
+	# Find best starting tile based on player's race preferences
+	var race_id = _wizard_data.get("player_race", "")
+	var preferred_biomes: Array = []
+	if race_id != "" and ColonyData.RACES.has(race_id):
+		preferred_biomes = ColonyData.RACES[race_id].get("preferred_biomes", [])
+
+	var best_tile = Vector2i(-1, -1)
+	var best_score = -1.0
+
+	for y in range(ColonyData.world_height):
+		for x in range(ColonyData.world_width):
+			var tile = ColonyData.get_tile(x, y)
+			if tile.get("terrain", "") == "water":
+				continue
+			if tile.get("owner", -1) != -1:
+				continue
+			var score = 1.0
+			var terrain = tile.get("terrain", "")
+			if terrain in preferred_biomes:
+				score += 5.0
+			# Bonus for nearby resources
+			if tile.get("resource", "") != "":
+				score += 2.0
+
+			if score > best_score:
+				best_score = score
+				best_tile = Vector2i(x, y)
+
+	if best_tile.x >= 0:
+		_wizard_minimap_selected = best_tile
+		_update_step_4_info()
+
+
+func _update_step_4_info() -> void:
+	var info_text: RichTextLabel = _wizard_overlay.find_child("Step4InfoText", true, false)
+	if not info_text:
+		return
+
+	var pos = _wizard_minimap_selected
+	if pos.x < 0 or pos.y < 0:
+		# Auto-select if nothing chosen yet
+		_on_wizard_auto_select()
+		pos = _wizard_minimap_selected
+
+	if pos.x < 0 or pos.y < 0:
+		info_text.text = "Click on the minimap to choose a starting position, or use Auto-Select."
+		return
+
+	var tile = ColonyData.get_tile(pos.x, pos.y)
+	var terrain = tile.get("terrain", "plains")
+	var resource = tile.get("resource", "")
+	var owner = tile.get("owner", -1)
+
+	var race_id = _wizard_data.get("player_race", "")
+	var preferred_biomes: Array = []
+	if race_id != "" and ColonyData.RACES.has(race_id):
+		preferred_biomes = ColonyData.RACES[race_id].get("preferred_biomes", [])
+
+	var is_preferred = terrain in preferred_biomes
+
+	var bb = ""
+	bb += "[b]Position:[/b] (%d, %d)\n" % [pos.x, pos.y]
+	bb += "[b]Terrain:[/b] %s" % terrain.capitalize()
+	if is_preferred:
+		bb += " [color=green][PREFERRED][/color]"
+	bb += "\n"
+
+	if resource != "":
+		bb += "[b]Nearby Resource:[/b] %s\n" % resource.capitalize()
+	else:
+		bb += "[b]Nearby Resource:[/b] None\n"
+
+	if owner >= 0 and owner < ColonyData.nations.size():
+		var nation = ColonyData.get_nation(owner)
+		bb += "[b]Claimed by:[/b] %s\n" % nation.get("name", "Unknown")
+
+	var race_name = ColonyData.RACES.get(race_id, {}).get("name", race_id.capitalize())
+	bb += "\n[color=#5a4a2a]Your %s will thrive in %s lands.[/color]" % [race_name, "preferred" if is_preferred else "unfamiliar"]
+
+	info_text.text = bb
+
+	# Also update minimap highlight
+	_render_minimap_with_highlight()
+
+
+func _render_minimap_with_highlight() -> void:
+	var w = ColonyData.world_width
+	var h = ColonyData.world_height
+	if w <= 0 or h <= 0:
+		return
+
+	# Render at reduced resolution for performance
+	var scale = max(1, int(max(w, h) / 400))
+	var rw = int(ceil(float(w) / scale))
+	var rh = int(ceil(float(h) / scale))
+
+	var img = Image.create(rw, rh, false, Image.FORMAT_RGB8)
+
+	var MINIMAP_COLORS: Dictionary = {
+		"plains": Color("#7ec850"),
+		"forest": Color("#3a7d25"),
+		"hills": Color("#8b7355"),
+		"mountain": Color("#808080"),
+		"swamp": Color("#4a5d23"),
+		"desert": Color("#d4a553"),
+		"caves": Color("#3d3d3d"),
+		"water": Color("#4488ff"),
+		"coast": Color("#a8d8ea"),
+	}
+
+	var sel = _wizard_minimap_selected
+	var sel_scaled = Vector2i(sel.x / scale, sel.y / scale)
+
+	for py in range(rh):
+		for px in range(rw):
+			var tx = px * scale
+			var ty = py * scale
+			var tile = ColonyData.get_tile(tx, ty)
+			var terrain = tile.get("terrain", "water")
+			var color: Color = MINIMAP_COLORS.get(terrain, Color.BLACK)
+
+			# Highlight selected position
+			if sel.x >= 0 and px == sel_scaled.x and py == sel_scaled.y:
+				color = Color(1.0, 0.85, 0.2)
+
+			img.set_pixel(px, py, color)
+
+	var tex = ImageTexture.create_from_image(img)
+
+	var rect: TextureRect = _wizard_overlay.find_child("MinimapPreview", true, false)
+	if rect:
+		rect.texture = tex
+
+
+func _refresh_step_4_content() -> void:
+	_wizard_world_generated = true
+	_render_minimap_with_highlight()
+	_update_step_4_info()
+
+
+func _get_world_generator() -> Node:
+	var sys = _find_systems_node()
+	if sys:
+		return sys.get_node_or_null("WorldGenerator")
+	return null
 
 func _create_main_menu_screen() -> void:
 	var overlay = Control.new()
@@ -627,7 +1720,12 @@ func _create_main_menu_screen() -> void:
 
 	var menu_panel = PanelContainer.new()
 	menu_panel.custom_minimum_size = Vector2(460, 560)
-	menu_panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.06, 0.04, 0.98), 18, 12))
+	# Try Kenney panel texture first, fall back to wood texture
+	var kenney_menu_panel = _make_kenney_stylebox(KENNEY_PANEL_BEIGE, 12, Color(1, 1, 1, 1), 12)
+	if kenney_menu_panel:
+		menu_panel.add_theme_stylebox_override("panel", kenney_menu_panel)
+	else:
+		menu_panel.add_theme_stylebox_override("panel", _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.06, 0.04, 0.98), 18, 12))
 
 	var panel_margin = _make_margin_container(28, 28, 28, 24)
 
@@ -686,10 +1784,7 @@ func _create_main_menu_screen() -> void:
 	new_game_btn.add_theme_stylebox_override("pressed", gold_pressed)
 	new_game_btn.pressed.connect(func():
 		overlay.hide()
-		var class_select: PanelContainer = _panels.get("class_select")
-		if class_select:
-			class_select.show()
-		GameManager._on_new_game_pressed()
+		_wizard_open()
 	)
 	vbox.add_child(new_game_btn)
 
@@ -752,6 +1847,460 @@ func _create_main_menu_screen() -> void:
 	new_game_btn.grab_focus()
 
 
+# =============================================================================
+# CLASS SELECTION SCREEN — Deity cards + Race selector with arrows
+# =============================================================================
+
+const RACE_EMOJI: Dictionary = {
+	"human": "\u263A",       # ☺
+	"dwarf": "\u26CF",       # ⛏
+	"elf": "\u2726",         # ✦
+	"orc": "\u2694",         # ⚔
+	"halfling": "\u2618",    # ☘
+	"goblin": "\u2620",      # ☠
+	"troll": "\u26A0",       # ⚠
+	"ogre": "\u2622",        # ☢
+	"gnome": "\u2699",       # ⚙
+}
+
+var _class_select_race_index: int = 0
+var _class_select_race_ids: Array[String] = []
+var _class_select_deity_cards: Dictionary = {}  # deity_class_id -> PanelContainer
+var _class_select_race_name_label: Label = null
+var _class_select_race_desc_label: Label = null
+var _class_select_race_dropdown: OptionButton = null
+var _class_select_selected_deity: String = ""
+
+func _create_class_selection_screen() -> void:
+	var overlay = Control.new()
+	overlay.name = "ClassSelectScreen"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.hide()
+
+	# Parchment background
+	var bg = TextureRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.texture = _load_ui_texture(UI_PARCHMENT_PATH)
+	overlay.add_child(bg)
+
+	var shade = ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.015, 0.012, 0.018, 0.42)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(shade)
+
+	# Main layout
+	var main_vbox = VBoxContainer.new()
+	main_vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	main_vbox.add_theme_constant_override("separation", 8)
+
+	# --- Title ---
+	var title = Label.new()
+	title.text = "THRONEHOLD"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 42)
+	title.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
+	title.add_theme_constant_override("shadow_offset_x", 2)
+	title.add_theme_constant_override("shadow_offset_y", 2)
+	main_vbox.add_child(title)
+
+	var subtitle = Label.new()
+	subtitle.text = "Choose Your Divine Form & Mortal Race"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 14)
+	subtitle.add_theme_color_override("font_color", Color("#d8b458"))
+	main_vbox.add_child(subtitle)
+	main_vbox.add_child(_make_separator())
+
+	# --- Top half: Deity cards (scrollable grid) ---
+	var deity_scroll = ScrollContainer.new()
+	deity_scroll.custom_minimum_size = Vector2(0, 300)
+	deity_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	deity_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var deity_grid = GridContainer.new()
+	deity_grid.name = "DeityCardGrid"
+	deity_grid.columns = 3
+	deity_grid.add_theme_constant_override("h_separation", 8)
+	deity_grid.add_theme_constant_override("v_separation", 8)
+
+	var dm = _get_deity_manager()
+	if not dm:
+		var err = Label.new()
+		err.text = "Error: Deity Manager not found"
+		err.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		main_vbox.add_child(err)
+		overlay.add_child(main_vbox)
+		add_child(overlay)
+		_panels["class_select"] = overlay
+		return
+
+	_class_select_deity_cards.clear()
+
+	for class_id in dm.DEITY_CLASSES:
+		var data = dm.DEITY_CLASSES[class_id]
+		var card = PanelContainer.new()
+		card.name = "DeityCard_%s" % class_id
+		card.custom_minimum_size = Vector2(220, 150)
+
+		var card_bg = StyleBoxFlat.new()
+		card_bg.bg_color = Color(1, 1, 1, 0.12)
+		card_bg.border_color = Color(0.5, 0.4, 0.15, 0.6)
+		card_bg.border_width_left = 1
+		card_bg.border_width_right = 1
+		card_bg.border_width_top = 1
+		card_bg.border_width_bottom = 1
+		card_bg.corner_radius_top_left = 4
+		card_bg.corner_radius_top_right = 4
+		card_bg.corner_radius_bottom_left = 4
+		card_bg.corner_radius_bottom_right = 4
+		card.add_theme_stylebox_override("panel", card_bg)
+		card.set_meta("deity_class_id", class_id)
+
+		var card_vbox = VBoxContainer.new()
+		card_vbox.add_theme_constant_override("separation", 3)
+
+		# Symbol + Name
+		var hdr_hbox = HBoxContainer.new()
+		hdr_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		var symbol_path = "res://assets/symbols/%s.png" % class_id
+		if ResourceLoader.exists(symbol_path):
+			var sym_tex = load(symbol_path) as Texture2D
+			if sym_tex:
+				var sym_rect = TextureRect.new()
+				sym_rect.texture = sym_tex
+				sym_rect.custom_minimum_size = Vector2(24, 24)
+				sym_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				sym_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				sym_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+				hdr_hbox.add_child(sym_rect)
+
+		var card_title = Label.new()
+		card_title.text = " " + data["name"]
+		card_title.add_theme_font_size_override("font_size", 14)
+		card_title.add_theme_color_override("font_color", Color(0.1, 0.05, 0.0))
+		hdr_hbox.add_child(card_title)
+		card_vbox.add_child(hdr_hbox)
+
+		var card_desc = Label.new()
+		card_desc.text = data["description"]
+		card_desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+		card_desc.add_theme_font_size_override("font_size", 10)
+		card_desc.add_theme_color_override("font_color", Color(0.2, 0.1, 0.05))
+		card_vbox.add_child(card_desc)
+
+		# Synergy races
+		var synergy = Label.new()
+		synergy.name = "SynergyLabel"
+		var race_names = []
+		for r in data["synergy_races"]:
+			var rd = ColonyData.RACES.get(r, {})
+			race_names.append(rd.get("name", r.capitalize()))
+		synergy.text = "Synergy: %s" % ", ".join(race_names)
+		synergy.add_theme_font_size_override("font_size", 10)
+		synergy.add_theme_color_override("font_color", Color("#7a6a20"))
+		card_vbox.add_child(synergy)
+
+		card_vbox.add_child(_make_spacer())
+
+		# Select button
+		var select_btn = Button.new()
+		select_btn.text = "Choose %s" % data["name"]
+		select_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		var cid = class_id
+		select_btn.pressed.connect(func():
+			_class_select_selected_deity = cid
+			# Highlight selected deity card
+			for id in _class_select_deity_cards:
+				var c: PanelContainer = _class_select_deity_cards[id]
+				var sb = c.get_theme_stylebox("panel", "PanelContainer")
+				if sb is StyleBoxFlat:
+					sb.border_color = Color(0.5, 0.4, 0.15, 0.6)
+			var sel_card: PanelContainer = _class_select_deity_cards.get(cid)
+			if sel_card:
+				var sel_sb = sel_card.get_theme_stylebox("panel", "PanelContainer")
+				if sel_sb is StyleBoxFlat:
+					sel_sb.border_color = Color(0.1, 0.1, 0.0, 1.0)
+		)
+		card_vbox.add_child(select_btn)
+
+		card.add_child(card_vbox)
+		deity_grid.add_child(card)
+		_class_select_deity_cards[class_id] = card
+
+	deity_scroll.add_child(deity_grid)
+	main_vbox.add_child(deity_scroll)
+	main_vbox.add_child(_make_separator())
+
+	# --- Bottom half: Race Selection ---
+	var race_section = VBoxContainer.new()
+	race_section.add_theme_constant_override("separation", 8)
+
+	# "Pick your people" label
+	var pick_label = Label.new()
+	pick_label.text = "Pick your people"
+	pick_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pick_label.add_theme_font_size_override("font_size", 18)
+	pick_label.add_theme_color_override("font_color", Color("#ffd700"))
+	pick_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	pick_label.add_theme_constant_override("shadow_offset_x", 1)
+	pick_label.add_theme_constant_override("shadow_offset_y", 1)
+	race_section.add_child(pick_label)
+
+	# --- Arrow buttons + Race name ---
+	var arrow_hbox = HBoxContainer.new()
+	arrow_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	arrow_hbox.add_theme_constant_override("separation", 16)
+
+	# Left arrow
+	var left_arrow = Button.new()
+	left_arrow.text = "\u25C0"  # ◀
+	left_arrow.custom_minimum_size = Vector2(52, 48)
+	left_arrow.add_theme_font_size_override("font_size", 24)
+	left_arrow.add_theme_color_override("font_color", Color("#d8b458"))
+	left_arrow.add_theme_color_override("font_hover_color", Color("#ffd700"))
+	left_arrow.tooltip_text = "Previous race"
+	var left_normal = StyleBoxFlat.new()
+	left_normal.bg_color = Color(0.08, 0.06, 0.04, 0.9)
+	left_normal.border_color = Color(0.6, 0.5, 0.2, 0.6)
+	left_normal.border_width_left = 1; left_normal.border_width_right = 1
+	left_normal.border_width_top = 1; left_normal.border_width_bottom = 1
+	left_normal.corner_radius_top_left = 6; left_normal.corner_radius_top_right = 6
+	left_normal.corner_radius_bottom_left = 6; left_normal.corner_radius_bottom_right = 6
+	var left_hover = left_normal.duplicate()
+	left_hover.bg_color = Color(0.15, 0.12, 0.08, 1.0)
+	left_hover.border_color = Color(1.0, 0.85, 0.3, 0.9)
+	left_arrow.add_theme_stylebox_override("normal", left_normal)
+	left_arrow.add_theme_stylebox_override("hover", left_hover)
+	left_arrow.pressed.connect(func(): _class_select_cycle_race(-1, overlay))
+	arrow_hbox.add_child(left_arrow)
+
+	# Race name + emoji
+	var race_name_container = VBoxContainer.new()
+	race_name_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	race_name_container.custom_minimum_size = Vector2(220, 0)
+
+	_class_select_race_name_label = Label.new()
+	_class_select_race_name_label.name = "RaceNameLabel"
+	_class_select_race_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_class_select_race_name_label.add_theme_font_size_override("font_size", 22)
+	_class_select_race_name_label.add_theme_color_override("font_color", Color("#ffd700"))
+	_class_select_race_name_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	_class_select_race_name_label.add_theme_constant_override("shadow_offset_x", 1)
+	_class_select_race_name_label.add_theme_constant_override("shadow_offset_y", 1)
+	race_name_container.add_child(_class_select_race_name_label)
+
+	arrow_hbox.add_child(race_name_container)
+
+	# Right arrow
+	var right_arrow = Button.new()
+	right_arrow.text = "\u25B6"  # ▶
+	right_arrow.custom_minimum_size = Vector2(52, 48)
+	right_arrow.add_theme_font_size_override("font_size", 24)
+	right_arrow.add_theme_color_override("font_color", Color("#d8b458"))
+	right_arrow.add_theme_color_override("font_hover_color", Color("#ffd700"))
+	right_arrow.tooltip_text = "Next race"
+	var right_normal = left_normal.duplicate()
+	var right_hover = left_hover.duplicate()
+	right_arrow.add_theme_stylebox_override("normal", right_normal)
+	right_arrow.add_theme_stylebox_override("hover", right_hover)
+	right_arrow.pressed.connect(func(): _class_select_cycle_race(1, overlay))
+	arrow_hbox.add_child(right_arrow)
+
+	race_section.add_child(arrow_hbox)
+
+	# Race description
+	_class_select_race_desc_label = Label.new()
+	_class_select_race_desc_label.name = "RaceDescLabel"
+	_class_select_race_desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_class_select_race_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_class_select_race_desc_label.add_theme_font_size_override("font_size", 12)
+	_class_select_race_desc_label.add_theme_color_override("font_color", Color("#c8b890"))
+	_class_select_race_desc_label.custom_minimum_size = Vector2(400, 36)
+	race_section.add_child(_class_select_race_desc_label)
+
+	# Race dropdown (alternative selection)
+	var dropdown_row = HBoxContainer.new()
+	dropdown_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	dropdown_row.add_theme_constant_override("separation", 10)
+
+	_class_select_race_dropdown = OptionButton.new()
+	_class_select_race_dropdown.name = "RaceDropdown"
+	_class_select_race_dropdown.custom_minimum_size = Vector2(200, 36)
+	_class_select_race_dropdown.add_theme_font_size_override("font_size", 14)
+	var dd_normal = StyleBoxFlat.new()
+	dd_normal.bg_color = Color(0.12, 0.08, 0.05, 0.95)
+	dd_normal.border_color = Color(0.6, 0.45, 0.2, 0.7)
+	dd_normal.border_width_left = 1; dd_normal.border_width_right = 1
+	dd_normal.border_width_top = 1; dd_normal.border_width_bottom = 1
+	dd_normal.corner_radius_top_left = 4; dd_normal.corner_radius_top_right = 4
+	dd_normal.corner_radius_bottom_left = 4; dd_normal.corner_radius_bottom_right = 4
+	_class_select_race_dropdown.add_theme_stylebox_override("normal", dd_normal)
+	var dd_hover = dd_normal.duplicate()
+	dd_hover.border_color = Color(1.0, 0.85, 0.3, 0.9)
+	_class_select_race_dropdown.add_theme_stylebox_override("hover", dd_hover)
+	dropdown_row.add_child(_class_select_race_dropdown)
+
+	# Start button
+	var start_btn = Button.new()
+	start_btn.text = "BEGIN GAME"
+	start_btn.custom_minimum_size = Vector2(180, 42)
+	start_btn.add_theme_font_size_override("font_size", 16)
+	start_btn.add_theme_color_override("font_color", Color("#1a1a2e"))
+	var gold_style = StyleBoxFlat.new()
+	gold_style.bg_color = Color(0.85, 0.7, 0.2, 0.9)
+	gold_style.corner_radius_top_left = 4; gold_style.corner_radius_top_right = 4
+	gold_style.corner_radius_bottom_left = 4; gold_style.corner_radius_bottom_right = 4
+	gold_style.border_color = Color(1.0, 0.9, 0.5, 1.0)
+	gold_style.border_width_left = 1; gold_style.border_width_right = 1
+	gold_style.border_width_top = 1; gold_style.border_width_bottom = 2
+	gold_style.shadow_color = Color(0.85, 0.7, 0.2, 0.4)
+	gold_style.shadow_size = 8
+	var gold_hover = gold_style.duplicate()
+	gold_hover.bg_color = Color(1.0, 0.85, 0.3, 1.0)
+	gold_hover.shadow_size = 12
+	start_btn.add_theme_stylebox_override("normal", gold_style)
+	start_btn.add_theme_stylebox_override("hover", gold_hover)
+	start_btn.pressed.connect(func():
+		_class_select_confirm(overlay)
+	)
+	dropdown_row.add_child(start_btn)
+
+	race_section.add_child(dropdown_row)
+	main_vbox.add_child(race_section)
+
+	# Add main vbox with margins
+	var margin = _make_margin_container(32, 12, 32, 16)
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(main_vbox)
+	overlay.add_child(margin)
+
+	add_child(overlay)
+	_panels["class_select"] = overlay
+
+	# Populate race dropdown and initialize race list
+	_populate_class_select_races()
+	_class_select_race_index = 0
+	_update_class_select_race_display()
+
+
+func _populate_class_select_races() -> void:
+	_class_select_race_ids.clear()
+	_class_select_race_dropdown.clear()
+	for race_id in ColonyData.RACES:
+		var data = ColonyData.RACES[race_id]
+		_class_select_race_ids.append(race_id)
+		var emoji = RACE_EMOJI.get(race_id, "")
+		var display_name = data.get("name", race_id.capitalize())
+		_class_select_race_dropdown.add_item("%s  %s" % [emoji, display_name])
+	_class_select_race_dropdown.item_selected.connect(func(idx: int):
+		if idx >= 0 and idx < _class_select_race_ids.size():
+			_class_select_race_index = idx
+			_update_class_select_race_display()
+	)
+
+
+func _class_select_cycle_race(direction: int, _overlay: Control) -> void:
+	var count = _class_select_race_ids.size()
+	if count == 0:
+		return
+	_class_select_race_index = (_class_select_race_index + direction) % count
+	if _class_select_race_index < 0:
+		_class_select_race_index += count
+	_class_select_race_dropdown.select(_class_select_race_index)
+	_update_class_select_race_display()
+
+
+func _update_class_select_race_display() -> void:
+	if _class_select_race_index < 0 or _class_select_race_index >= _class_select_race_ids.size():
+		return
+
+	var race_id = _class_select_race_ids[_class_select_race_index]
+	var data = ColonyData.RACES.get(race_id, {})
+	if data.is_empty():
+		return
+
+	var emoji = RACE_EMOJI.get(race_id, "")
+	var name = data.get("name", race_id.capitalize())
+
+	if _class_select_race_name_label:
+		_class_select_race_name_label.text = "%s  %s" % [emoji, name]
+
+	if _class_select_race_desc_label:
+		_class_select_race_desc_label.text = data.get("description", "")
+
+	# Update deity card synergy highlights
+	_update_deity_card_synergy_highlight(race_id)
+
+
+func _class_select_confirm(overlay: Control) -> void:
+	if _class_select_race_index < 0 or _class_select_race_index >= _class_select_race_ids.size():
+		return
+
+	var race_id = _class_select_race_ids[_class_select_race_index]
+	_wizard_data["player_race"] = race_id
+	ColonyData.player_race = race_id
+	ColonyData.selected_race = race_id
+
+	var deity_class = _class_select_selected_deity
+	if deity_class == "":
+		# Default to first deity
+		var dm = _get_deity_manager()
+		if dm:
+			var keys = dm.DEITY_CLASSES.keys()
+			if not keys.is_empty():
+				deity_class = keys[0]
+
+	if deity_class != "":
+		_wizard_data["deity_class"] = deity_class
+
+	_commit_wizard_settings()
+	overlay.hide()
+	GameManager.world_setup_complete()
+	_show_player_controls()
+	_refresh_all()
+	var tm = _get_time_manager()
+	if tm:
+		tm.start()
+
+
+func _update_deity_card_synergy_highlight(race_id: String) -> void:
+	if _class_select_deity_cards.is_empty():
+		return
+
+	var dm = _get_deity_manager()
+	if not dm:
+		return
+
+	for class_id in _class_select_deity_cards:
+		var card: PanelContainer = _class_select_deity_cards[class_id]
+		var data = dm.DEITY_CLASSES.get(class_id, {})
+		if data.is_empty():
+			continue
+
+		var is_synergy = race_id in data.get("synergy_races", [])
+		var sb = card.get_theme_stylebox("panel", "PanelContainer")
+		if sb is StyleBoxFlat:
+			if is_synergy:
+				sb.border_color = Color(0.2, 0.8, 0.2, 0.9)
+				sb.bg_color = Color(0.08, 0.35, 0.08, 0.25)
+			else:
+				sb.border_color = Color(0.5, 0.4, 0.15, 0.4)
+				sb.bg_color = Color(1, 1, 1, 0.10)
+		# Also update the synergy label text color
+		var syn_label = card.find_child("SynergyLabel", false, false)
+		if syn_label and syn_label is Label:
+			if is_synergy:
+				syn_label.add_theme_color_override("font_color", Color("#2aff2a"))
+			else:
+				syn_label.add_theme_color_override("font_color", Color("#7a6a20"))
+
+
 func _create_tutorial_overlay() -> void:
 	var tutorial = preload("res://scripts/ui/TutorialOverlay.gd").new()
 	tutorial.name = "TutorialOverlay"
@@ -766,6 +2315,9 @@ func _create_tutorial_overlay() -> void:
 func _on_class_selected_tutorial(_class_id: String) -> void:
 	if ColonyData.has_seen_tutorial:
 		return
+	# Don't show tutorial during wizard flow
+	if _wizard_overlay and _wizard_overlay.visible:
+		return
 	var tutorial: CanvasLayer = _panels.get("tutorial")
 	if tutorial:
 		tutorial.show()
@@ -776,6 +2328,8 @@ func _connect_signals() -> void:
 	EventBus.tick_advanced.connect(_on_tick_advanced)
 	EventBus.resources_updated.connect(_on_resources_updated)
 	EventBus.population_changed.connect(_on_population_changed)
+	EventBus.resource_critical.connect(func(_n: int, _r: String, _a: float): _ui_dirty = true) # mark dirty so stats show critical
+	EventBus.war_declared.connect(func(_a: int, _d: int): _ui_dirty = true) # relations changed
 	EventBus.divine_power_changed.connect(_on_divine_power_changed)
 	EventBus.power_unlocked.connect(_on_power_unlocked)
 	EventBus.event_triggered.connect(_on_event_triggered)
@@ -787,13 +2341,17 @@ func _connect_signals() -> void:
 	EventBus.leader_changed.connect(func(_n: int, _o: int, _new: int): _refresh_all())
 	EventBus.belief_changed.connect(func(_n: int, _r: String, _v: float): _refresh_all())
 	EventBus.tile_hovered.connect(_on_tile_hovered)
+	EventBus.tile_context_requested.connect(_on_tile_context_requested)
 	EventBus.building_placed.connect(_on_building_placed)
 	EventBus.tile_clicked.connect(_on_placement_tile_clicked)
+	EventBus.tile_clicked.connect(_on_tile_clicked_info_panel)
 	EventBus.building_placement_mode_changed.connect(_on_placement_mode_changed)
 	EventBus.faction_defeated.connect(func(_n: int, _f: String): _refresh_factions_if_visible())
 	EventBus.faction_integrated.connect(func(_n: int, _f: String): _refresh_factions_if_visible())
 	EventBus.underground_toggled.connect(_on_underground_toggled)
 	EventBus.deity_class_selected.connect(_on_class_selected_tutorial)
+	EventBus.game_paused.connect(_show_paused_indicator)
+	EventBus.game_resumed.connect(_hide_paused_indicator)
 
 	# --- Season change toast ---
 	EventBus.season_changed.connect(_on_season_changed)
@@ -834,6 +2392,7 @@ func _connect_signals() -> void:
 	EventBus.subrace_emerged.connect(func(nid: int, _old: String, new_race: String): _show_toast("ðŸ§¬ New subrace emerges among %s: %s" % [_nation_name(nid), new_race.capitalize()]))
 	EventBus.victory_achieved.connect(func(vtype: String, desc: String): _display_victory_overlay(vtype, desc))
 	EventBus.defeat_triggered.connect(func(reason: String, desc: String): _display_defeat_overlay(reason, desc))
+	EventBus.save_requested.connect(func(): _show_toast("Game saved!"))
 
 # =============================================================================
 # CHRONICLE SIGNALS â€” Narrative prose entries for the Event Log
@@ -1063,7 +2622,12 @@ func _on_tick_advanced(tick: int, day: int, season: String, year: int) -> void:
 	_current_game_tick = tick
 	var label: Label = _panels["date"]
 	label.text = "Year %d, %s - Day %d" % [year, season, day]
-	_refresh_all()
+	# Throttle full refresh — date updates every tick, heavy panels every N ticks or when dirty
+	_ui_refresh_counter += 1
+	if _ui_dirty or _ui_refresh_counter >= UI_REFRESH_INTERVAL:
+		_ui_refresh_counter = 0
+		_ui_dirty = false
+		_refresh_all()
 
 func _on_resources_updated(_nation_id: int, _resources: Dictionary) -> void:
 	_refresh_resource_panel()
@@ -1071,6 +2635,7 @@ func _on_resources_updated(_nation_id: int, _resources: Dictionary) -> void:
 
 func _on_population_changed(_nation_id: int, _count: int) -> void:
 	_refresh_stats_panel()
+	_ui_dirty = true
 
 func _on_divine_power_changed(_a: float, _m: float) -> void:
 	_refresh_deity_panel()
@@ -1091,10 +2656,194 @@ func _on_tile_hovered(tile_x: int, tile_y: int) -> void:
 	else:
 		tile = ColonyData.get_tile(tile_x, tile_y)
 	if tile.is_empty():
+		_tooltip_label.text = ""
 		return
 	_refresh_tile_info(tile, tile_x, tile_y)
+	# DF-inspired: update persistent tooltip label on every hover
+	_update_tooltip(tile_x, tile_y, tile)
+	# DF-inspired: update modeless info panel with tile details
+	var terrain = tile.get("terrain", "unknown")
+	var owner_id = tile.get("owner", -1)
+	var owner_name = "Wilderness"
+	if owner_id >= 0 and owner_id < ColonyData.nations.size():
+		owner_name = ColonyData.nations[owner_id].get("name", "Unknown")
+	var resources_str = ""
+	for res_key in ["food", "production", "gold", "faith"]:
+		var val = tile.get(res_key, 0.0)
+		if val != 0.0:
+			resources_str += " %s +%.1f/tick" % [res_key.capitalize(), val]
+	var bb = "[b]%s (%d, %d)[/b]\n" % [terrain.capitalize(), tile_x, tile_y]
+	bb += "Territory: %s\n" % owner_name
+	if tile.get("resource", "") != "":
+		bb += "Resource: %s\n" % tile["resource"].capitalize()
+	if resources_str != "":
+		bb += "Yields:%s\n" % resources_str
+	_show_info_panel("Tile Info", bb)
+	# Auto-switch to Tile tab when hovering a tile
+	_switch_side_tab("tile")
 	if _placement_mode:
 		_refresh_building_selection()
+
+
+func _on_tile_context_requested(tile_x: int, tile_y: int, context: Dictionary) -> void:
+	# Create or reuse a context PopupMenu
+	var popup: PopupMenu = _panels.get("context_menu")
+	if not popup:
+		popup = PopupMenu.new()
+		popup.name = "GameContextMenu"
+		popup.add_theme_color_override("font_color", Color(0.9, 0.9, 0.92))
+		popup.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.5))
+		popup.hide()
+		add_child(popup)
+		_panels["context_menu"] = popup
+
+	popup.clear()
+	var has_any_item = false
+
+	# --- Nation territory actions ---
+	if context.get("has_owner", false):
+		var owner_name: String = context.get("owner_name", "Unknown")
+		popup.add_icon_item(null, "View Nation: %s" % owner_name, 100)
+		popup.add_icon_item(null, "Diplomacy with %s" % owner_name, 101)
+		if owner_name != ColonyData.get_player_nation().get("name", ""):
+			popup.add_icon_item(null, "Declare War on %s" % owner_name, 102)
+		has_any_item = true
+
+	# --- Building actions ---
+	if context.get("has_buildings", false):
+		if has_any_item:
+			popup.add_separator()
+		var building_list: Array = context.get("buildings", [])
+		for b in building_list:
+			var bname = ColonyData.BUILDINGS.get(b, {}).get("name", b)
+			popup.add_icon_item(null, "View: %s" % bname, 200)
+			var upgrade_to: String = ColonyData.BUILDINGS.get(b, {}).get("upgrade_to", "")
+			if upgrade_to != "":
+				var upg_name = ColonyData.BUILDINGS.get(upgrade_to, {}).get("name", upgrade_to)
+				popup.add_icon_item(null, "Upgrade %s -> %s" % [bname, upg_name], 201)
+			popup.add_icon_item(null, "Demolish %s" % bname, 202)
+		has_any_item = true
+
+	# --- Faction actions ---
+	if context.get("has_faction", false):
+		if has_any_item:
+			popup.add_separator()
+		var fname: String = context.get("faction_name", "Faction")
+		popup.add_icon_item(null, "Fight %s" % fname, 300)
+		popup.add_icon_item(null, "Bribe %s" % fname, 301)
+		popup.add_icon_item(null, "Integrate %s" % fname, 302)
+		has_any_item = true
+
+	# --- Monster actions ---
+	if context.get("has_monster", false):
+		if has_any_item:
+			popup.add_separator()
+		var mname: String = context.get("monster_name", "Monster")
+		popup.add_icon_item(null, "View Monster: %s" % mname, 400)
+
+	if not has_any_item:
+		return
+
+	# Store context reference for the callback
+	popup.set_meta("tile_x", tile_x)
+	popup.set_meta("tile_y", tile_y)
+	popup.set_meta("context", context)
+
+	# Disconnect previous and reconnect
+	if popup.index_pressed.is_connected(_on_context_menu_item_selected):
+		popup.index_pressed.disconnect(_on_context_menu_item_selected)
+	popup.index_pressed.connect(_on_context_menu_item_selected)
+
+	# Position at mouse and show
+	var mouse_pos = get_viewport().get_mouse_position()
+	popup.position = Vector2i(mouse_pos)
+	popup.reset_size()
+	popup.show()
+
+
+func _on_context_menu_item_selected(index: int) -> void:
+	var popup: PopupMenu = _panels.get("context_menu")
+	if not popup:
+		return
+	var id: int = popup.get_item_id(index)
+	var context: Dictionary = popup.get_meta("context", {})
+	var tile_x: int = popup.get_meta("tile_x", -1)
+	var tile_y: int = popup.get_meta("tile_y", -1)
+
+	match id:
+		# Nation actions
+		100:
+			# View Nation — switch side panel to Nation tab
+			_switch_side_tab("nation")
+		101:
+			# Diplomacy — open the diplomacy panel
+			_open_diplomacy_panel()
+		102:
+			# Declare War
+			var owner_id: int = context.get("owner_id", -1)
+			if owner_id >= 0 and owner_id != ColonyData.player_nation_id:
+				EventBus.war_declared.emit(ColonyData.player_nation_id, owner_id)
+
+		# Building actions
+		200:
+			# View Building — switch to Tile tab
+			_switch_side_tab("tile")
+		201:
+			# Upgrade building — select upgrade and enter placement mode
+			_switch_side_tab("tile")
+			# Trigger building upgrade by entering placement mode
+			if not _placement_mode:
+				_toggle_placement_mode()
+		202:
+			# Demolish building
+			var buildings: Array = context.get("buildings", [])
+			if buildings.size() > 0:
+				var bm = _get_building_manager()
+				if bm and bm.has_method("destroy_building"):
+					bm.destroy_building(tile_x, tile_y, buildings[0])
+
+		# Faction actions
+		300, 301, 302:
+			_execute_faction_action(id, context)
+
+		# Monster actions
+		400:
+			_switch_side_tab("tile")
+
+
+func _execute_faction_action(id: int, context: Dictionary) -> void:
+	if not context.get("has_faction", false):
+		return
+	var faction_data: Dictionary = context.get("faction_data", {})
+	var fm = _get_faction_manager()
+	if not fm:
+		return
+	var action_map = {300: "fight", 301: "bribe", 302: "integrate"}
+	var action: String = action_map.get(id, "fight")
+	var result = fm.interact_with_faction(ColonyData.player_nation_id, faction_data.get("id", -1), action)
+	if result.get("success", false):
+		_show_toast("Context: %s succeeded" % action.capitalize())
+	else:
+		_show_toast("Context: %s failed — %s" % [action.capitalize(), result.get("reason", "unknown")])
+
+
+func _set_active_side_tab(tab: String) -> void:
+	# Update tab button toggle states
+	for t in ["nation", "deity", "tile"]:
+		var btn: Button = _panels.get("side_tab_btn_" + t)
+		if btn:
+			btn.button_pressed = (t == tab)
+	# Show the correct content
+	_switch_side_tab(tab)
+
+
+func _switch_side_tab(tab: String) -> void:
+	var nation_container = _panels.get("tab_nation")
+	var deity_container = _panels.get("tab_deity")
+	var tile_container = _panels.get("tab_tile")
+	if nation_container: nation_container.visible = (tab == "nation")
+	if deity_container: deity_container.visible = (tab == "deity")
+	if tile_container: tile_container.visible = (tab == "tile")
 
 func _refresh_tile_info(tile: Dictionary, tx: int, ty: int) -> void:
 	var tile_info: RichTextLabel = _panels.get("tile_info")
@@ -1129,6 +2878,15 @@ func _refresh_tile_info(tile: Dictionary, tx: int, ty: int) -> void:
 	tile_info.text = bb
 
 func _on_world_generated(_w: int, _h: int) -> void:
+	if _wizard_step == 4:
+		_show_wizard_step(4)
+		return
+	if _wizard_overlay and _wizard_overlay.visible:
+		# Wizard world gen completed — show step 4
+		_wizard_world_generated = true
+		_wizard_step = 4
+		_show_wizard_step(4)
+		return
 	_show_player_controls()
 	_refresh_all()
 
@@ -1156,6 +2914,32 @@ func _on_underground_toggled(enabled: bool) -> void:
 	# Refresh hovered tile info if currently hovering
 	if _hovered_tile_x >= 0 and _hovered_tile_y >= 0:
 		_on_tile_hovered(_hovered_tile_x, _hovered_tile_y)
+
+func _on_tile_clicked_info_panel(tile_x: int, tile_y: int) -> void:
+	# Show nation info in the modeless info panel when clicking a tile
+	var tile = ColonyData.get_tile(tile_x, tile_y)
+	if tile.is_empty():
+		return
+	var owner_id = tile.get("owner", -1)
+	if owner_id >= 0 and owner_id < ColonyData.nations.size():
+		var nation = ColonyData.get_nation(owner_id)
+		if not nation.is_empty():
+			var race_name = ColonyData.RACES.get(nation.get("primary_race", ""), {}).get("name", "?")
+			var bb = "[b]%s[/b]\n" % nation.get("name", "Unknown")
+			bb += "Race: %s\n" % race_name
+			bb += "Ruler: %s\n" % ColonyData.get_leader(nation["id"]).get("name", "?")
+			bb += "Pop: %d\n" % nation.get("population", 0)
+			bb += "Military: %d\n" % nation.get("military_strength", 0)
+			var gov_data = ColonyData.GOVERNMENT_TYPES.get(nation.get("government", "kingdom"), {})
+			bb += "Government: %s\n" % gov_data.get("name", "?")
+			_show_info_panel(nation.get("name", "Nation"), bb)
+	else:
+		# Unclaimed tile — show tile info instead
+		var terrain = tile.get("terrain", "unknown")
+		var bb = "[b]%s (%d, %d)[/b] — Unclaimed\n" % [terrain.capitalize(), tile_x, tile_y]
+		if tile.get("resource", "") != "":
+			bb += "Resource: %s\n" % tile["resource"].capitalize()
+		_show_info_panel("Tile Info", bb)
 
 func _on_placement_tile_clicked(tile_x: int, tile_y: int) -> void:
 	if not _placement_mode:
@@ -1217,6 +3001,23 @@ func _show_toast(text: String) -> void:
 	if not container:
 		return
 
+	# Deduplicate: skip if same text exists in the last 3 queued toasts
+	if _toast_queue.size() >= 1:
+		var check_start: int = max(0, _toast_queue.size() - 3)
+		for i in range(check_start, _toast_queue.size()):
+			if _toast_queue[i]["text"] == text:
+				return
+
+	# Queue if already at visible toast limit
+	if _active_toasts >= MAX_VISIBLE_TOASTS:
+		_toast_queue.append({"text": text})
+		return
+
+	_show_toast_immediate(text, container)
+
+func _show_toast_immediate(text: String, container: Node) -> void:
+	_active_toasts += 1
+
 	var toast = Label.new()
 	toast.text = text
 	toast.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -1238,7 +3039,17 @@ func _show_toast(text: String) -> void:
 	tween.set_parallel(false)
 	tween.tween_interval(2.5)
 	tween.tween_property(toast, "modulate", Color(1, 1, 1, 0), 0.5)
-	tween.tween_callback(toast.queue_free)
+	tween.tween_callback(func():
+		toast.queue_free()
+		_active_toasts -= 1
+		_process_toast_queue(container)
+	)
+
+func _process_toast_queue(container: Node) -> void:
+	if _toast_queue.is_empty() or _active_toasts >= MAX_VISIBLE_TOASTS:
+		return
+	var entry: Dictionary = _toast_queue.pop_front()
+	_show_toast_immediate(entry["text"], container)
 
 func _refresh_building_selection() -> void:
 	var container: VBoxContainer = _panels["build_list"]
@@ -1418,6 +3229,7 @@ func _refresh_building_selection() -> void:
 	container.add_child(_make_separator())
 	var cancel_btn = Button.new()
 	cancel_btn.text = "Cancel Placement"
+	cancel_btn.tooltip_text = "Exit building placement mode"
 	cancel_btn.pressed.connect(func():
 		_placement_mode = false
 		EventBus.building_placement_mode_changed.emit(false)
@@ -1429,9 +3241,54 @@ func _on_pause_pressed() -> void:
 	if GameManager.current_state == GameManager.GameState.PAUSED:
 		GameManager.change_state(GameManager.GameState.PLAYING)
 		btn.text = "Pause"
+		_hide_paused_indicator()
 	else:
 		GameManager.change_state(GameManager.GameState.PAUSED)
 		btn.text = "Play"
+		_show_paused_indicator()
+
+func _show_paused_indicator() -> void:
+	if not _paused_indicator:
+		return
+	_paused_indicator.show()
+	_single_step_btn.show()
+	# Pulsing animation
+	if _paused_indicator_tween and _paused_indicator_tween.is_valid():
+		_paused_indicator_tween.kill()
+	_paused_indicator_tween = create_tween()
+	_paused_indicator_tween.set_loops()
+	_paused_indicator_tween.tween_property(_paused_indicator, "modulate:a", 0.3, 1.0)
+	_paused_indicator_tween.tween_property(_paused_indicator, "modulate:a", 0.6, 1.0)
+
+func _hide_paused_indicator() -> void:
+	if _paused_indicator:
+		_paused_indicator.hide()
+		_paused_indicator.modulate.a = 1.0
+	if _paused_indicator_tween and _paused_indicator_tween.is_valid():
+		_paused_indicator_tween.kill()
+	if _single_step_btn:
+		_single_step_btn.hide()
+
+func _on_home_pressed() -> void:
+	var nat = ColonyData.get_player_nation()
+	if nat.is_empty():
+		return
+	var cam = get_node_or_null("../Camera2D")
+	if cam:
+		var ts = ChunkRenderer.TILE_SIZE
+		cam.position = Vector2(nat["capital_x"] * ts, nat["capital_y"] * ts)
+
+
+func _on_save_pressed() -> void:
+	var systems = _find_systems_node()
+	var sm: Node = null
+	if systems:
+		sm = systems.get_node_or_null("SaveManager")
+	if sm:
+		sm.save_game("user://save.json")
+		_show_toast("Game saved!")
+	else:
+		print("[GameUI] SaveManager not found")
 
 func _change_speed(dir: int) -> void:
 	_speed_index = clamp(_speed_index + dir, 0, _speed_levels.size() - 1)
@@ -1908,6 +3765,244 @@ func _on_spectator_quit() -> void:
 	get_tree().reload_current_scene()
 
 # --- Panel openers ---
+# --- DF-inspired Modeless Info Panel ---
+func _show_info_panel(title: String, content_bb: String) -> void:
+	_info_panel.show()
+	var title_label: Label = _info_panel.find_child("InfoPanelTitle", true, false)
+	if title_label:
+		title_label.text = title
+	_info_panel_content.text = content_bb
+
+func _on_single_step_pressed() -> void:
+	var tm = _get_time_manager()
+	if tm and tm.is_paused:
+		tm._advance_tick()
+		# Refresh UI after single step
+		_refresh_all()
+		# Flash feedback
+		if _single_step_btn:
+			var tween = create_tween()
+			tween.tween_property(_single_step_btn, "modulate:a", 0.5, 0.1)
+			tween.tween_property(_single_step_btn, "modulate:a", 1.0, 0.1)
+
+func _show_tutorial() -> void:
+	# Show guide list overlay if it already exists
+	if _panels.has("tutorial_guide_list"):
+		_panels["tutorial_guide_list"].show()
+		return
+
+	var overlay = PanelContainer.new()
+	overlay.name = "TutorialGuideList"
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg_style = StyleBoxFlat.new()
+	bg_style.bg_color = Color(0.0, 0.0, 0.0, 0.65)
+	overlay.add_theme_stylebox_override("panel", bg_style)
+	add_child(overlay)
+	_panels["tutorial_guide_list"] = overlay
+
+	var center = CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel = PanelContainer.new()
+	panel.custom_minimum_size = Vector2(580, 480)
+	var panel_style = _make_textured_panel_style(UI_WOOD_PANEL_PATH, Color(0.1, 0.065, 0.045, 0.98), 18, 12)
+	if panel_style:
+		panel.add_theme_stylebox_override("panel", panel_style)
+	center.add_child(panel)
+
+	var margin = _make_margin_container(16, 12, 16, 12)
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+
+	# Header row
+	var hdr = HBoxContainer.new()
+	var title_label = Label.new()
+	title_label.text = "Help & Tutorial Guides"
+	title_label.add_theme_font_size_override("font_size", 22)
+	title_label.add_theme_color_override("font_color", Color("#f1d891"))
+	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr.add_child(title_label)
+
+	var close_btn = Button.new()
+	close_btn.text = "X"
+	close_btn.custom_minimum_size = Vector2(32, 28)
+	close_btn.pressed.connect(func():
+		overlay.hide()
+	)
+	hdr.add_child(close_btn)
+	vbox.add_child(hdr)
+
+	vbox.add_child(_make_separator())
+
+	# Subtitle
+	var subtitle = Label.new()
+	var has_seen = ColonyData.has_seen_tutorial
+	subtitle.text = "Select a guide to replay, or start from the beginning." if has_seen else "New player? Work through these tutorials to learn the basics."
+	subtitle.add_theme_font_size_override("font_size", 12)
+	subtitle.add_theme_color_override("font_color", Color("#aabbcc"))
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD
+	vbox.add_child(subtitle)
+
+	# Start From Beginning button (shown when tutorial has been seen)
+	if has_seen:
+		var begin_hbox = HBoxContainer.new()
+		begin_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		var begin_btn = Button.new()
+		begin_btn.text = "▶ Replay Tutorial"
+		begin_btn.custom_minimum_size = Vector2(200, 34)
+		begin_btn.add_theme_color_override("font_color", Color("#ffd700"))
+		var btn_style = StyleBoxFlat.new()
+		btn_style.bg_color = Color(0.12, 0.12, 0.2, 0.85)
+		btn_style.border_color = Color(0.85, 0.7, 0.2, 0.7)
+		btn_style.border_width_left = 1; btn_style.border_width_right = 1
+		btn_style.border_width_top = 1; btn_style.border_width_bottom = 1
+		btn_style.corner_radius_top_left = 4; btn_style.corner_radius_top_right = 4
+		btn_style.corner_radius_bottom_left = 4; btn_style.corner_radius_bottom_right = 4
+		begin_btn.add_theme_stylebox_override("normal", btn_style)
+		begin_btn.pressed.connect(func():
+			overlay.hide()
+			_launch_tutorial_at_step(0)
+		)
+		begin_hbox.add_child(begin_btn)
+		vbox.add_child(begin_hbox)
+		vbox.add_child(_make_separator())
+
+	# Scrollable guide list
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var guide_vbox = VBoxContainer.new()
+	guide_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guide_vbox.add_theme_constant_override("separation", 6)
+
+	# Read guides from TutorialOverlay constants
+	var TutorialScript = preload("res://scripts/ui/TutorialOverlay.gd")
+	var guides = TutorialScript.STEPS
+	var icons = TutorialScript.STEP_ICONS
+
+	for i in range(guides.size()):
+		var step = guides[i]
+		var icon = icons[i] if i < icons.size() else "?"
+
+		var card = PanelContainer.new()
+		var card_bg = StyleBoxFlat.new()
+		card_bg.bg_color = Color(0.06, 0.06, 0.1, 0.6)
+		card_bg.border_color = Color(0.3, 0.3, 0.45, 0.35)
+		card_bg.border_width_left = 1; card_bg.border_width_right = 1
+		card_bg.border_width_top = 1; card_bg.border_width_bottom = 1
+		card_bg.corner_radius_top_left = 6; card_bg.corner_radius_top_right = 6
+		card_bg.corner_radius_bottom_left = 6; card_bg.corner_radius_bottom_right = 6
+		card.add_theme_stylebox_override("panel", card_bg)
+
+		var card_hbox = HBoxContainer.new()
+		card_hbox.add_theme_constant_override("separation", 10)
+
+		# Step number badge
+		var badge = PanelContainer.new()
+		badge.custom_minimum_size = Vector2(36, 36)
+		var badge_bg = StyleBoxFlat.new()
+		badge_bg.bg_color = Color(0.15, 0.15, 0.25, 0.8)
+		badge_bg.corner_radius_top_left = 18
+		badge_bg.corner_radius_top_right = 18
+		badge_bg.corner_radius_bottom_left = 18
+		badge_bg.corner_radius_bottom_right = 18
+		badge.add_theme_stylebox_override("panel", badge_bg)
+
+		var badge_label = Label.new()
+		badge_label.text = icon
+		badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		badge_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		badge.add_child(badge_label)
+		card_hbox.add_child(badge)
+
+		# Title + description
+		var text_vbox = VBoxContainer.new()
+		text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text_vbox.add_theme_constant_override("separation", 2)
+
+		var card_title = Label.new()
+		card_title.text = "Step %d: %s" % [i + 1, step["title"]]
+		card_title.add_theme_font_size_override("font_size", 14)
+		card_title.add_theme_color_override("font_color", Color("#e8d5a3"))
+		text_vbox.add_child(card_title)
+
+		# Brief description — strip BBCode, truncate
+		var raw_desc = step["desc"]
+		raw_desc = raw_desc.replace("[b]", "").replace("[/b]", "")
+		raw_desc = raw_desc.replace("[i]", "").replace("[/i]", "")
+		# Take first sentence or first 120 chars
+		var period_idx = raw_desc.find(".")
+		var brief = raw_desc.substr(0, period_idx + 1) if period_idx > 20 && period_idx < 200 else raw_desc.substr(0, 120)
+		if brief.length() >= 120:
+			brief = brief.substr(0, 117) + "..."
+
+		var card_desc = Label.new()
+		card_desc.text = brief
+		card_desc.add_theme_font_size_override("font_size", 11)
+		card_desc.add_theme_color_override("font_color", Color("#999aaa"))
+		card_desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+		text_vbox.add_child(card_desc)
+
+		card_hbox.add_child(text_vbox)
+
+		# Replay button
+		var replay_btn = Button.new()
+		replay_btn.text = "Replay"
+		replay_btn.custom_minimum_size = Vector2(80, 30)
+		replay_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var step_idx = i
+		replay_btn.pressed.connect(func():
+			overlay.hide()
+			_launch_tutorial_at_step(step_idx)
+		)
+		card_hbox.add_child(replay_btn)
+
+		card.add_child(card_hbox)
+		guide_vbox.add_child(card)
+
+	scroll.add_child(guide_vbox)
+	vbox.add_child(scroll)
+
+	margin.add_child(vbox)
+	panel.add_child(margin)
+
+
+func _launch_tutorial_at_step(step_idx: int) -> void:
+	# Check if a tutorial overlay already exists but is hidden
+	var tutorial: CanvasLayer = _panels.get("tutorial")
+	if tutorial and is_instance_valid(tutorial):
+		tutorial.show()
+		tutorial.set_process_mode(Node.PROCESS_MODE_ALWAYS)
+		if tutorial.has_method("show_step"):
+			tutorial.show_step(step_idx)
+	else:
+		# Create fresh tutorial overlay
+		var new_tutorial = preload("res://scripts/ui/TutorialOverlay.gd").new()
+		new_tutorial.name = "TutorialOverlay"
+		new_tutorial.set_on_complete(func():
+			print("[Tutorial] Completed — marked as seen")
+		)
+		add_child(new_tutorial)
+		_panels["tutorial"] = new_tutorial
+
+func _update_tooltip(tile_x: int, tile_y: int, tile: Dictionary) -> void:
+	if not _tooltip_label:
+		return
+	if tile.is_empty():
+		_tooltip_label.text = ""
+		return
+	var terrain = tile.get("terrain", "unknown")
+	var owner_id = tile.get("owner", -1)
+	var owner_name = "Wilderness"
+	if owner_id >= 0 and owner_id < ColonyData.nations.size():
+		owner_name = ColonyData.nations[owner_id].get("name", "Unknown")
+	var resource = tile.get("resource", "")
+	var resource_str = ""
+	if resource != "":
+		resource_str = " — %s" % resource.capitalize()
+	_tooltip_label.text = "%s (%d, %d) — %s%s" % [terrain.capitalize(), tile_x, tile_y, owner_name, resource_str]
+
 func _open_policy_panel() -> void: _show_panel("policy_panel", _refresh_policy_panel_content)
 func _open_skill_tree_panel() -> void: _show_panel("skill_tree_panel", _refresh_skill_tree_content)
 func _open_influence_panel() -> void: _show_panel("influence_panel", _refresh_influence_content)
@@ -2083,6 +4178,59 @@ func _refresh_stats_panel() -> void:
 		bb += "[color=%s]%s[/color]: %s\n" % [_relation_color(rel), n["name"], _relation_label(rel)]
 
 	text.text = bb
+
+	# Refresh diegetic threat display
+	_refresh_threat_display(nat)
+
+func _refresh_threat_display(nat: Dictionary) -> void:
+	var threat_label: Label = _panels.get("threat_label")
+	var threat_fill: ColorRect = _panels.get("threat_bar_fill")
+	var threat_details: RichTextLabel = _panels.get("threat_details")
+	if not threat_label or not threat_fill or not threat_details:
+		return
+
+	# Calculate diegetic threat components
+	var em = _get_event_manager()
+	var biome_t = 1.0
+	var wealth_t = 1.0
+	var prox_t = 1.0
+	var total_t = 1.0
+
+	if em and em.has_method("_calculate_biome_threat"):
+		biome_t = em._calculate_biome_threat(nat)
+	if em and em.has_method("_calculate_wealth_attraction"):
+		wealth_t = em._calculate_wealth_attraction(nat)
+	if em and em.has_method("_calculate_proximity_threat"):
+		prox_t = em._calculate_proximity_threat(nat)
+
+	total_t = biome_t * wealth_t * prox_t
+	var diff_scale = 1.0
+	if em and em.has_method("_get_difficulty_threat_scale"):
+		diff_scale = em._get_difficulty_threat_scale()
+
+	var effective_threat = total_t * diff_scale
+
+	# Threat bar (normalized to 0-5)
+	var bar_fill = clamp(effective_threat / 5.0, 0.05, 1.0)
+	threat_fill.set_anchor(SIDE_RIGHT, bar_fill)
+
+	# Color: green -> yellow -> orange -> red
+	var threat_color: Color
+	if effective_threat < 1.5:
+		threat_color = Color(0.2, 0.7, 0.2)  # green
+	elif effective_threat < 2.5:
+		threat_color = Color(0.7, 0.7, 0.2)  # yellow
+	elif effective_threat < 3.5:
+		threat_color = Color(0.9, 0.5, 0.1)  # orange
+	else:
+		threat_color = Color(0.8, 0.15, 0.15)  # red
+	threat_fill.color = threat_color
+
+	threat_label.text = "Threat Level: %.1f" % effective_threat
+	threat_label.add_theme_color_override("font_color", threat_color)
+
+	var diff_name = ColonyData.difficulty.capitalize()
+	threat_details.text = "[color=#888]Biome: %.1f  Wealth: %.1f  Proximity: %.1f\nDifficulty (%s): %.1fx[/color]" % [biome_t, wealth_t, prox_t, diff_name, diff_scale]
 
 func _refresh_artifacts_panel() -> void:
 	var text: RichTextLabel = _panels.get("artifacts")
@@ -2481,6 +4629,7 @@ func _refresh_pantheon_content(panel: PanelContainer) -> void:
 		return
 	_refreshing_pantheon = true
 
+	_pantheon_sliders.clear()
 	var content: VBoxContainer = panel.find_child("Content", true, false)
 	for child in content.get_children():
 		child.queue_free()
@@ -2548,8 +4697,13 @@ func _refresh_pantheon_content(panel: PanelContainer) -> void:
 			pct_label.text = "%d%%" % int(slider.value * 100)
 			pct_label.custom_minimum_size = Vector2(40, 0)
 
+			# Store references so we can update directly without rebuilding
+			_pantheon_sliders[aspect_id] = {"slider": slider, "label": pct_label}
+
 			var aid = aspect_id
 			slider.value_changed.connect(func(val: float):
+				if _updating_pantheon_sliders:
+					return
 				val = snapped(val, 0.05)
 				var others: Array[String] = []
 				for a in dm.active_aspects:
@@ -2572,7 +4726,18 @@ func _refresh_pantheon_content(panel: PanelContainer) -> void:
 							dm.allocate_power(_o3, share)
 
 				dm.allocate_power(aid, val)
-				_refresh_pantheon_content(panel)
+
+				# Update all sliders in-place without rebuilding the panel
+				_updating_pantheon_sliders = true
+				for asp_id in dm.active_aspects:
+					var refs: Dictionary = _pantheon_sliders.get(asp_id, {})
+					var s: HSlider = refs.get("slider")
+					var l: Label = refs.get("label")
+					if s and l:
+						var new_val: float = dm.aspect_power_allocation.get(asp_id, 0.0)
+						s.set_value_no_signal(new_val)
+						l.text = "%d%%" % int(new_val * 100)
+				_updating_pantheon_sliders = false
 			)
 
 			slider_hbox.add_child(slider)
@@ -3723,6 +5888,27 @@ func _load_ui_texture(path: String) -> Texture2D:
 	return null
 
 
+func _make_kenney_stylebox(path: String, margin: int = 8, modulate: Color = Color(1, 1, 1, 1), content_margin: int = -1) -> StyleBoxTexture:
+	# Creates a StyleBoxTexture from a Kenney pixel art texture with nearest-neighbor filtering.
+	var tex = _load_ui_texture(path)
+	if not tex:
+		return null
+	var style = StyleBoxTexture.new()
+	style.texture = tex
+	style.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	style.texture_margin_left = margin
+	style.texture_margin_right = margin
+	style.texture_margin_top = margin
+	style.texture_margin_bottom = margin
+	style.modulate_color = modulate
+	if content_margin >= 0:
+		style.content_margin_left = content_margin
+		style.content_margin_right = content_margin
+		style.content_margin_top = content_margin
+		style.content_margin_bottom = content_margin
+	return style
+
+
 func _make_textured_panel_style(path: String, fallback_color: Color, texture_margin: int = 16, content_margin: int = 10) -> StyleBox:
 	var tex = _load_ui_texture(path)
 	if tex:
@@ -3805,7 +5991,7 @@ func _find_policy_id(name: String) -> String:
 func _find_miracle_id(name: String) -> String:
 	var dm = _get_deity_manager()
 	if not dm:
-		print("[GameUI] _create_class_selection_screen: dm is null! returning early!")
+		print("[GameUI] _find_miracle_id: dm is null! returning early!")
 		return ""
 	for id in dm.all_miracles:
 		if dm.all_miracles[id]["name"] == name:
@@ -3958,51 +6144,73 @@ func _apply_dark_theme() -> void:
 		theme.set_font("font", "HeaderLarge", title_font)
 		theme.set_font_size("font_size", "HeaderLarge", 28)
 		
-	var wood_tex = _load_ui_texture(UI_WOOD_PANEL_PATH)
+	# --- Kenney Fantasy UI textures (pixel art) ---
+	var kenney_panel = _make_kenney_stylebox(KENNEY_PANEL_BROWN, 12, Color(1, 1, 1, 1), 10)
+	var kenney_btn_normal = _make_kenney_stylebox(KENNEY_BUTTON_NORMAL, 6, Color(0.85, 0.82, 0.8))
+	var kenney_btn_hover = _make_kenney_stylebox(KENNEY_BUTTON_NORMAL, 6, Color(1.0, 0.95, 0.85))
+	var kenney_btn_pressed = _make_kenney_stylebox(KENNEY_BUTTON_PRESSED, 6, Color(0.75, 0.72, 0.7))
+	var kenney_bar_bg = _make_kenney_stylebox(KENNEY_BAR_BG, 6, Color(0.8, 0.8, 0.8))
+	var kenney_bar_fill = _make_kenney_stylebox(KENNEY_BAR_FILL, 4, Color(1, 1, 1))
 
-	var panel_style = StyleBoxTexture.new()
-	if wood_tex:
-		panel_style.texture = wood_tex
-		panel_style.texture_margin_left = 16
-		panel_style.texture_margin_right = 16
-		panel_style.texture_margin_top = 16
-		panel_style.texture_margin_bottom = 16
+	# --- Panel ---
+	var panel_style: StyleBox
+	if kenney_panel:
+		panel_style = kenney_panel
 	else:
-		panel_style = StyleBoxFlat.new()
-		panel_style.bg_color = Color(0.1, 0.05, 0.05, 0.95)
-		panel_style.content_margin_left = 16
-		panel_style.content_margin_right = 16
-		panel_style.content_margin_top = 16
-		panel_style.content_margin_bottom = 16
-
+		var wood_tex = _load_ui_texture(UI_WOOD_PANEL_PATH)
+		if wood_tex:
+			panel_style = StyleBoxTexture.new()
+			panel_style.texture = wood_tex
+			panel_style.texture_margin_left = 16
+			panel_style.texture_margin_right = 16
+			panel_style.texture_margin_top = 16
+			panel_style.texture_margin_bottom = 16
+		else:
+			var flat = StyleBoxFlat.new()
+			flat.bg_color = Color(0.1, 0.05, 0.05, 0.95)
+			flat.content_margin_left = 16
+			flat.content_margin_right = 16
+			flat.content_margin_top = 16
+			flat.content_margin_bottom = 16
+			panel_style = flat
 	theme.set_stylebox("panel", "PanelContainer", panel_style)
 	theme.set_stylebox("panel", "Panel", panel_style)
-	# Premium Button style
-	var btn_normal = StyleBoxFlat.new()
-	btn_normal.bg_color = Color(0.2, 0.15, 0.1, 0.95)
-	btn_normal.border_color = Color(0.6, 0.5, 0.2, 0.8)
-	btn_normal.border_width_left = 1; btn_normal.border_width_right = 1
-	btn_normal.border_width_top = 1; btn_normal.border_width_bottom = 2
-	btn_normal.corner_radius_top_left = 2; btn_normal.corner_radius_top_right = 2
-	btn_normal.corner_radius_bottom_left = 2; btn_normal.corner_radius_bottom_right = 2
-	
-	var btn_hover = btn_normal.duplicate()
-	btn_hover.bg_color = Color(0.15, 0.15, 0.25, 0.95)
-	btn_hover.border_color = Color(0.9, 0.8, 0.3, 0.9) # Glow gold on hover
-	btn_hover.shadow_color = Color(0.9, 0.8, 0.3, 0.2)
-	btn_hover.shadow_size = 4
-	
-	var btn_pressed = btn_normal.duplicate()
-	btn_pressed.bg_color = Color(0.08, 0.08, 0.12, 0.9)
-	btn_pressed.border_color = Color(0.7, 0.6, 0.2, 0.9)
-	btn_pressed.border_width_top = 2; btn_pressed.border_width_bottom = 1 # pressed down effect
 
-	theme.set_stylebox("normal", "Button", btn_normal)
-	theme.set_stylebox("hover", "Button", btn_hover)
-	theme.set_stylebox("pressed", "Button", btn_pressed)
-	theme.set_stylebox("normal", "OptionButton", btn_normal)
-	theme.set_stylebox("hover", "OptionButton", btn_hover)
-	theme.set_stylebox("pressed", "OptionButton", btn_pressed)
+	# --- Buttons (Kenney textures, fallback to flat) ---
+	if kenney_btn_normal:
+		theme.set_stylebox("normal", "Button", kenney_btn_normal)
+		theme.set_stylebox("hover", "Button", kenney_btn_hover if kenney_btn_hover else kenney_btn_normal)
+		theme.set_stylebox("pressed", "Button", kenney_btn_pressed if kenney_btn_pressed else kenney_btn_normal)
+		theme.set_stylebox("normal", "OptionButton", kenney_btn_normal)
+		theme.set_stylebox("hover", "OptionButton", kenney_btn_hover if kenney_btn_hover else kenney_btn_normal)
+		theme.set_stylebox("pressed", "OptionButton", kenney_btn_pressed if kenney_btn_pressed else kenney_btn_normal)
+	else:
+		# Fallback: Premium Button style (StyleBoxFlat)
+		var btn_normal = StyleBoxFlat.new()
+		btn_normal.bg_color = Color(0.2, 0.15, 0.1, 0.95)
+		btn_normal.border_color = Color(0.6, 0.5, 0.2, 0.8)
+		btn_normal.border_width_left = 1; btn_normal.border_width_right = 1
+		btn_normal.border_width_top = 1; btn_normal.border_width_bottom = 2
+		btn_normal.corner_radius_top_left = 2; btn_normal.corner_radius_top_right = 2
+		btn_normal.corner_radius_bottom_left = 2; btn_normal.corner_radius_bottom_right = 2
+		
+		var btn_hover = btn_normal.duplicate()
+		btn_hover.bg_color = Color(0.15, 0.15, 0.25, 0.95)
+		btn_hover.border_color = Color(0.9, 0.8, 0.3, 0.9) # Glow gold on hover
+		btn_hover.shadow_color = Color(0.9, 0.8, 0.3, 0.2)
+		btn_hover.shadow_size = 4
+		
+		var btn_pressed = btn_normal.duplicate()
+		btn_pressed.bg_color = Color(0.08, 0.08, 0.12, 0.9)
+		btn_pressed.border_color = Color(0.7, 0.6, 0.2, 0.9)
+		btn_pressed.border_width_top = 2; btn_pressed.border_width_bottom = 1 # pressed down effect
+
+		theme.set_stylebox("normal", "Button", btn_normal)
+		theme.set_stylebox("hover", "Button", btn_hover)
+		theme.set_stylebox("pressed", "Button", btn_pressed)
+		theme.set_stylebox("normal", "OptionButton", btn_normal)
+		theme.set_stylebox("hover", "OptionButton", btn_hover)
+		theme.set_stylebox("pressed", "OptionButton", btn_pressed)
 
 	# Focus style — gold border highlight for keyboard navigation
 	var focus_style = StyleBoxFlat.new()
@@ -4025,22 +6233,27 @@ func _apply_dark_theme() -> void:
 	theme.set_color("font_color", "RichTextLabel", Color(0.92, 0.92, 0.95))
 	theme.set_color("default_color", "RichTextLabel", Color(0.92, 0.92, 0.95))
 
-	# Premium Progress bar
-	var progress_bg = StyleBoxFlat.new()
-	progress_bg.bg_color = Color(0.05, 0.05, 0.08, 0.8)
-	progress_bg.border_width_left = 1; progress_bg.border_width_right = 1
-	progress_bg.border_width_top = 1; progress_bg.border_width_bottom = 1
-	progress_bg.border_color = Color(0.2, 0.2, 0.3, 0.8)
-	progress_bg.corner_radius_top_left = 4; progress_bg.corner_radius_top_right = 4
-	progress_bg.corner_radius_bottom_left = 4; progress_bg.corner_radius_bottom_right = 4
-	
-	var progress_style = StyleBoxFlat.new()
-	progress_style.bg_color = Color(0.2, 0.8, 0.3, 0.9) # Bright emerald green
-	progress_style.corner_radius_top_left = 4; progress_style.corner_radius_top_right = 4
-	progress_style.corner_radius_bottom_left = 4; progress_style.corner_radius_bottom_right = 4
-	
-	theme.set_stylebox("background", "ProgressBar", progress_bg)
-	theme.set_stylebox("fill", "ProgressBar", progress_style)
+	# --- Progress bar (Kenney textures, fallback to flat) ---
+	if kenney_bar_bg and kenney_bar_fill:
+		theme.set_stylebox("background", "ProgressBar", kenney_bar_bg)
+		theme.set_stylebox("fill", "ProgressBar", kenney_bar_fill)
+	else:
+		# Fallback: Premium Progress bar
+		var progress_bg = StyleBoxFlat.new()
+		progress_bg.bg_color = Color(0.05, 0.05, 0.08, 0.8)
+		progress_bg.border_width_left = 1; progress_bg.border_width_right = 1
+		progress_bg.border_width_top = 1; progress_bg.border_width_bottom = 1
+		progress_bg.border_color = Color(0.2, 0.2, 0.3, 0.8)
+		progress_bg.corner_radius_top_left = 4; progress_bg.corner_radius_top_right = 4
+		progress_bg.corner_radius_bottom_left = 4; progress_bg.corner_radius_bottom_right = 4
+		
+		var progress_style = StyleBoxFlat.new()
+		progress_style.bg_color = Color(0.2, 0.8, 0.3, 0.9) # Bright emerald green
+		progress_style.corner_radius_top_left = 4; progress_style.corner_radius_top_right = 4
+		progress_style.corner_radius_bottom_left = 4; progress_style.corner_radius_bottom_right = 4
+		
+		theme.set_stylebox("background", "ProgressBar", progress_bg)
+		theme.set_stylebox("fill", "ProgressBar", progress_style)
 
 	# Elegant Separator
 	theme.set_color("color", "HSeparator", Color(0.85, 0.7, 0.2, 0.3)) # Faint gold line

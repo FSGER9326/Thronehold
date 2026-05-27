@@ -32,11 +32,6 @@ func start_new_game() -> void:
 	# Scene is already main.tscn
 	pass
 
-func _on_new_game_pressed() -> void:
-	change_state(GameState.CLASS_SELECT)
-	# Auto-select first class for screenshot capture
-	class_selection_complete()
-
 func world_setup_complete() -> void:
 	change_state(GameState.PLAYING)
 	# Time was paused during setup; the caller should start TimeManager

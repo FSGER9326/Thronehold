@@ -2,18 +2,18 @@ class_name NationManager
 extends Node
 
 var _ai_tick_counter: int = 0
-const AI_TICK_INTERVAL: int = 10
+const AI_TICK_INTERVAL: int = 30
 
 var _ai_research_counter: int = 0
 const AI_RESEARCH_INTERVAL: int = 60
 
 var _policy_tick_counter: int = 0
-const POLICY_TICK_INTERVAL: int = 30
+const POLICY_TICK_INTERVAL: int = 60
 
 # Track leader ages for death checks
 var _leader_age_check_counter: int = 0
 
-# Diplomatic assessment every 6 AI cycles (60 ticks)
+# Diplomatic assessment every 6 AI cycles (120 ticks)
 var _diplo_cycle_counter: int = 0
 const DIPLO_CYCLE_INTERVAL: int = 6
 
@@ -82,9 +82,13 @@ func _run_ai_tick(nation: Dictionary, do_diplomacy: bool = false) -> void:
 	var aggression_mult: float = diff_settings.get("ai_aggression", 1.0)
 	personality_mod["aggression"] = personality_mod.get("aggression", 1.0) * aggression_mult
 
+	# Diegetic proximity threat: nations near hostiles become more aggressive
+	var prox_threat = _calculate_proximity_threat(nation)
+	personality_mod["aggression"] *= prox_threat
+
 	_evaluate_needs_and_act(nation, personality_mod)
 
-	# Diplomatic assessment every 6 AI cycles (6 * 10 = 60 ticks)
+	# Diplomatic assessment every 6 AI cycles (6 * 20 = 120 ticks)
 	if do_diplomacy:
 		_evaluate_alliances(nation)
 		_evaluate_enemies(nation)
@@ -284,6 +288,18 @@ func _ai_resource_action(nation: Dictionary, action: String, target_id: int, res
 		
 		"expand":
 			nation["ai_strategy"] = "expand"
+
+# Diegetic proximity threat: nations closer to hostile neighbors gain tension
+func _calculate_proximity_threat(nation: Dictionary) -> float:
+	var closest_hostile = 9999.0
+	for target in ColonyData.nations:
+		if target["id"] == nation["id"]:
+			continue
+		if _get_relation(nation["id"], target["id"]) < 30:
+			var dist = abs(nation["capital_x"] - target["capital_x"]) + abs(nation["capital_y"] - target["capital_y"])
+			if dist < closest_hostile:
+				closest_hostile = dist
+	return clamp(1.0 + (1.0 - closest_hostile / 100.0), 0.5, 2.5)
 
 func _get_leader_personality_mod(leader: Dictionary) -> Dictionary:
 	var mod = {"aggression": 1.0, "growth": 1.0, "trade": 1.0, "diplomacy": 1.0}

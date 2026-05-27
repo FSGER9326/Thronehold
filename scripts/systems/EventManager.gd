@@ -198,7 +198,9 @@ var _event_cooldown: int = 0
 const EVENT_MIN_TICKS: int = 30
 var _scene_cache: Node
 
-# --- Threat Scaling (RimWorld-style adaptation) ---
+# --- Diegetic Threat Scaling (DF-style) ---
+# The world IS the difficulty curve. Biome, wealth, and proximity determine threat.
+# Difficulty slider only scales how MUCH the diegetic systems affect you.
 var _adaptation_score: float = 1.0
 var _last_loss_tick: int = 0
 
@@ -263,10 +265,52 @@ func _calculate_threat_multiplier() -> float:
 	if nat.is_empty():
 		return 1.0
 
-	var pop_factor = float(nat["population"]) / 100.0
-	var res: Dictionary = nat["resources"]
-	var wealth = (res["gold"] + res["food"] + res["metal"]) / 500.0
-	return clamp(pop_factor + wealth + _adaptation_score, 0.5, 3.0)
+	# Diegetic threat: the world IS the difficulty curve
+	var biome_t = _calculate_biome_threat(nat)
+	var wealth_t = _calculate_wealth_attraction(nat)
+	var proximity_t = _calculate_proximity_threat(nat)
+	var diff_scale = _get_difficulty_threat_scale()
+
+	return clamp(biome_t * wealth_t * proximity_t * _adaptation_score * diff_scale, 0.4, 5.0)
+
+# --- Diegetic Threat Components ---
+
+func _calculate_biome_threat(nation: Dictionary) -> float:
+	var capital = ColonyData.get_tile(nation["capital_x"], nation["capital_y"])
+	var terrain = capital["terrain"]
+	var threat_map = {
+		"plains": 0.8, "forest": 1.0, "hills": 1.2, "mountain": 1.5,
+		"swamp": 1.3, "desert": 1.0, "caves": 1.8, "coast": 0.9,
+	}
+	return threat_map.get(terrain, 1.0)
+
+func _calculate_wealth_attraction(nation: Dictionary) -> float:
+	var total_wealth = 0.0
+	for r in nation["resources"]:
+		total_wealth += nation["resources"][r] * 0.01
+	return clamp(total_wealth / 500.0, 0.5, 3.0)
+
+func _calculate_proximity_threat(nation: Dictionary) -> float:
+	var closest_hostile = 9999.0
+	for target in ColonyData.nations:
+		if target["id"] == nation["id"]:
+			continue
+		if _get_relation_to(nation["id"], target["id"]) < 30:
+			var dist = abs(nation["capital_x"] - target["capital_x"]) + abs(nation["capital_y"] - target["capital_y"])
+			if dist < closest_hostile:
+				closest_hostile = dist
+	return clamp(1.0 + (1.0 - closest_hostile / 100.0), 0.5, 2.5)
+
+func _get_difficulty_threat_scale() -> float:
+	var diff_settings: Dictionary = ColonyData.DIFFICULTY_SETTINGS.get(ColonyData.difficulty, ColonyData.DIFFICULTY_SETTINGS["normal"])
+	return diff_settings.get("threat_scale", 1.0)
+
+func _get_relation_to(nation_a: int, nation_b: int) -> float:
+	if nation_a >= ColonyData.diplomacy_matrix.size():
+		return 50.0
+	if nation_b >= ColonyData.diplomacy_matrix[nation_a].size():
+		return 50.0
+	return ColonyData.diplomacy_matrix[nation_a][nation_b]
 
 func _update_adaptation(tick: int) -> void:
 	# If no losses in the last 60 ticks, threat creeps up

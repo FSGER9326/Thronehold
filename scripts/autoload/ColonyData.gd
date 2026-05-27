@@ -314,20 +314,17 @@ const RACES: Dictionary = {
 const DIFFICULTY_SETTINGS: Dictionary = {
 	"easy": {
 		"ai_aggression": 0.6,
-		"resource_rate": 1.3,
-		"growth_rate": 1.2,
+		"threat_scale": 0.5,   # World itself is less dangerous
 		"research_rate": 1.3,
 	},
 	"normal": {
 		"ai_aggression": 1.0,
-		"resource_rate": 1.0,
-		"growth_rate": 1.0,
+		"threat_scale": 1.0,   # World IS the difficulty curve
 		"research_rate": 1.0,
 	},
 	"hard": {
 		"ai_aggression": 1.3,
-		"resource_rate": 0.8,
-		"growth_rate": 0.8,
+		"threat_scale": 1.5,   # World hits twice as hard
 		"research_rate": 0.7,
 	},
 }
@@ -476,20 +473,21 @@ var deity_domain: String = "Forge"
 # TUTORIAL
 # =============================================================================
 
-var has_seen_tutorial: bool = false
+var has_seen_tutorial: bool = false  # Persisted via SaveManager — resets only on fresh game
 
 # =============================================================================
 # PLAYER NATION
 # =============================================================================
 
 var player_nation_id: int = -1
+var selected_race: String = "dwarf"  # Chosen in class selection screen, affects player nation
 
 # =============================================================================
 # WORLD
 # =============================================================================
 
-var world_width: int = 400
-var world_height: int = 300
+var world_width: int = 600
+var world_height: int = 450
 var world_tiles: Array[Dictionary] = []
 var underground_tiles: Array[Dictionary] = []
 var world_history: Dictionary = {}  # Populated by HistoryGenerator during world gen
@@ -944,15 +942,15 @@ func _on_leader_changed(nation_id: int, _old_id: int, _new_id: int) -> void:
 # =============================================================================
 
 const RACE_STARTING_RESOURCES: Dictionary = {
-	"human":    {"food": 140.0, "wood": 60.0, "stone": 40.0, "metal": 15.0, "gold": 20.0},
-	"dwarf":    {"food": 100.0, "wood": 40.0, "stone": 80.0, "metal": 35.0, "gold": 25.0},
-	"elf":      {"food": 120.0, "wood": 80.0, "stone": 30.0, "metal": 10.0, "gold": 15.0},
-	"orc":      {"food": 150.0, "wood": 50.0, "stone": 30.0, "metal": 10.0, "gold": 5.0},
-	"halfling": {"food": 180.0, "wood": 50.0, "stone": 25.0, "metal": 10.0, "gold": 30.0},
-	"goblin":   {"food": 90.0,  "wood": 30.0, "stone": 25.0, "metal": 10.0, "gold": 5.0},
-	"troll":    {"food": 80.0,  "wood": 30.0, "stone": 40.0, "metal": 5.0,  "gold": 5.0},
-	"ogre":     {"food": 120.0, "wood": 20.0, "stone": 30.0, "metal": 5.0,  "gold": 2.0},
-	"gnome":    {"food": 100.0, "wood": 40.0, "stone": 50.0, "metal": 25.0, "gold": 35.0},
+	"human":    {"food": 140.0, "wood": 60.0, "stone": 40.0, "metal": 15.0, "gold": 30.0},
+	"dwarf":    {"food": 100.0, "wood": 40.0, "stone": 80.0, "metal": 35.0, "gold": 37.5},
+	"elf":      {"food": 120.0, "wood": 80.0, "stone": 30.0, "metal": 10.0, "gold": 22.5},
+	"orc":      {"food": 150.0, "wood": 50.0, "stone": 30.0, "metal": 10.0, "gold": 7.5},
+	"halfling": {"food": 180.0, "wood": 50.0, "stone": 25.0, "metal": 10.0, "gold": 45.0},
+	"goblin":   {"food": 90.0,  "wood": 30.0, "stone": 25.0, "metal": 10.0, "gold": 7.5},
+	"troll":    {"food": 80.0,  "wood": 30.0, "stone": 40.0, "metal": 5.0,  "gold": 7.5},
+	"ogre":     {"food": 120.0, "wood": 20.0, "stone": 30.0, "metal": 5.0,  "gold": 3.0},
+	"gnome":    {"food": 100.0, "wood": 40.0, "stone": 50.0, "metal": 25.0, "gold": 52.5},
 }
 
 func create_nation(name: String, primary_race: String, color: String, capital_x: int, capital_y: int) -> Dictionary:
@@ -964,7 +962,7 @@ func create_nation(name: String, primary_race: String, color: String, capital_x:
 		"color": color,
 		"capital_x": capital_x,
 		"capital_y": capital_y,
-		"population": randi_range(50, 150),
+		"population": randi_range(80, 200),
 		"resources": starting_res.duplicate(),
 		"military_strength": randi_range(5, 25),
 		"relationships": {},

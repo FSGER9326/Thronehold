@@ -2,6 +2,7 @@ class_name MonsterManager
 extends Node
 
 var _attack_cooldown: int = 0
+var _tick_counter: int = 0
 
 const MONSTER_PREFIXES: Array[String] = [
 	"Grimfang", "Ashwing", "Thunderclaw", "Shadowmaw", "Ironhide",
@@ -29,7 +30,7 @@ func _ready() -> void:
 
 func _spawn_monsters(_w: int, _h: int) -> void:
 	ColonyData.world_monsters.clear()
-	var count = randi_range(5, 8)
+	var count = randi_range(16, 24)
 	var used_names: Array[String] = []
 
 	for i in range(count):
@@ -96,6 +97,12 @@ func _generate_name(species: String, used_names: Array[String]) -> String:
 
 func _on_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> void:
 	_attack_cooldown += 1
+	_tick_counter += 1
+
+	# Monster attack checks every 4 ticks
+	if _tick_counter % 4 != 0:
+		return
+
 	if _attack_cooldown < ATTACK_TICK_INTERVAL:
 		return
 	_attack_cooldown = 0

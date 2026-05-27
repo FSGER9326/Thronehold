@@ -14,12 +14,19 @@ var _minimap_rect: ColorRect
 var _minimap_viewport_rect: ColorRect
 var _minimap_outline_rect: ColorRect
 var _minimap_enabled: bool = true
+var _minimap_zlevel_label: Label
+var _minimap_dirty: bool = false
+var _minimap_tick_counter: int = 0
+var _minimap_elevation_bar: TextureRect
+var _minimap_underworld_label: Label
 
 var _hovered_tile: Vector2i = Vector2i(-1, -1)
 
 var _visual_effects: Array[Dictionary] = []
-var _nation_tile_positions: Dictionary = {}
+var _nation_tile_rects: Dictionary = {}      # {nation_id: Array[Rect2]} — pre-built rects for fast _draw()
 var _effects_dirty: bool = false
+
+var _right_click_menu: PopupMenu
 
 var _subrace_transitions: Dictionary = {}  # {nation_id: {old_color, target_color, progress, duration}}
 
@@ -45,13 +52,13 @@ func _ready() -> void:
 	EventBus.subrace_emerged.connect(func(nid: int, _old: String, new_race: String):
 		_show_subrace_emergence(nid, new_race))
 
-	# Build tile position cache after world generation; refresh on territory changes
+	# Build tile rect cache after world generation; refresh on territory changes
 	EventBus.world_generated.connect(func(_w: int, _h: int):
-		_build_nation_tile_positions()
+		_build_nation_tile_rects()
 		_rebuild_building_cache()
 		_effects_dirty = true)
 	EventBus.territory_captured.connect(func(_c: int, _x: int, _y: int):
-		_build_nation_tile_positions()
+		_build_nation_tile_rects()
 		_effects_dirty = true)
 
 	# Building indicator cache — invalidate on building changes; world_generated does a full rebuild
@@ -79,16 +86,26 @@ func _ready() -> void:
 	# Create the minimap overlay
 	_create_minimap()
 
+	# Create right-click context menu (hidden by default)
+	_right_click_menu = PopupMenu.new()
+	_right_click_menu.name = "RightClickMenu"
+	add_child(_right_click_menu)
+
+	# DF-inspired: z-level indicator update on underground toggle
+	EventBus.underground_toggled.connect(_on_underground_toggled_minimap)
+	EventBus.tick_advanced.connect(_on_minimap_tick_advanced)
+
 	# Create static grid overlay for tactical feel
 	var grid = Node2D.new()
 	grid.name = "GridOverlay"
 	grid.draw.connect(func():
-		var gw = ColonyData.world_width * 16
-		var gh = ColonyData.world_height * 16
+		var ts = ChunkRenderer.TILE_SIZE
+		var gw = ColonyData.world_width * ts
+		var gh = ColonyData.world_height * ts
 		var grid_color = Color(0, 0, 0, 0.15) # Faint black lines
-		for x in range(0, gw + 16, 16):
+		for x in range(0, gw + ts, ts):
 			grid.draw_line(Vector2(x, 0), Vector2(x, gh), grid_color, 1.0)
-		for y in range(0, gh + 16, 16):
+		for y in range(0, gh + ts, ts):
 			grid.draw_line(Vector2(0, y), Vector2(gw, y), grid_color, 1.0)
 	)
 	add_child(grid)
@@ -105,6 +122,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			var tile_pos = _screen_to_tile(event.position)
 			if tile_pos.x >= 0:
 				EventBus.tile_clicked.emit(tile_pos.x, tile_pos.y)
+
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			var tile_pos = _screen_to_tile(event.position)
+			if tile_pos.x >= 0:
+				var context = _get_tile_context(tile_pos.x, tile_pos.y)
+				if not context.is_empty():
+					EventBus.tile_context_requested.emit(tile_pos.x, tile_pos.y, context)
 
 	if event is InputEventMouseMotion:
 		var tile_pos = _screen_to_tile(event.position)
@@ -126,7 +150,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # =============================================================================
 
 func get_world_position(tile_x: int, tile_y: int) -> Vector2:
-	return Vector2(tile_x * 16, tile_y * 16)
+	return Vector2(tile_x * ChunkRenderer.TILE_SIZE, tile_y * ChunkRenderer.TILE_SIZE)
 
 
 # =============================================================================
@@ -138,8 +162,9 @@ func _screen_to_tile(pos: Vector2) -> Vector2i:
 	var world_pos = pos
 	if cam:
 		world_pos = pos + cam.position - get_viewport().get_visible_rect().size / 2.0
-	var tx = int(world_pos.x / 16.0)
-	var ty = int(world_pos.y / 16.0)
+	var ts = ChunkRenderer.TILE_SIZE
+	var tx = int(world_pos.x / float(ts))
+	var ty = int(world_pos.y / float(ts))
 	if tx < 0 or tx >= ColonyData.world_width or ty < 0 or ty >= ColonyData.world_height:
 		return Vector2i(-1, -1)
 	return Vector2i(tx, ty)
@@ -153,8 +178,12 @@ func _create_minimap() -> void:
 	# Wrapper container for label + panel
 	var container = VBoxContainer.new()
 	container.name = "MiniMapContainer"
-	container.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	container.position = Vector2(-180, -180)
+	# Explicit anchor to top-right — visible and clear
+	container.set_anchor(SIDE_RIGHT, 1.0)
+	container.set_anchor(SIDE_TOP, 0.0)
+	container.set_offset(SIDE_RIGHT, -10)
+	container.set_offset(SIDE_TOP, 50)
+	container.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	# "MINIMAP" label above the panel
 	var label = Label.new()
@@ -164,6 +193,19 @@ func _create_minimap() -> void:
 	label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.9))
 	label.add_theme_font_size_override("font_size", 9)
 	container.add_child(label)
+
+	# DF-inspired: Z-level indicator on the minimap
+	_minimap_zlevel_label = Label.new()
+	_minimap_zlevel_label.name = "MiniMapZLevel"
+	_minimap_zlevel_label.text = "Surface"
+	_minimap_zlevel_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_minimap_zlevel_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+	_minimap_zlevel_label.add_theme_font_size_override("font_size", 8)
+	container.add_child(_minimap_zlevel_label)
+
+	# HBox to hold minimap panel + elevation bar side by side
+	var map_hbox = HBoxContainer.new()
+	map_hbox.add_theme_constant_override("separation", 2)
 
 	_minimap_panel = PanelContainer.new()
 	_minimap_panel.name = "MiniMap"
@@ -201,13 +243,42 @@ func _create_minimap() -> void:
 	# Click to jump camera
 	_minimap_rect.gui_input.connect(_on_minimap_input)
 
-	container.add_child(_minimap_panel)
+	map_hbox.add_child(_minimap_panel)
+
+	# DF-inspired: Elevation bar (vertical ColorRect on right of minimap)
+	var elevation_container = VBoxContainer.new()
+	elevation_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var elev_label = Label.new()
+	elev_label.text = "E"
+	elev_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	elev_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.6))
+	elev_label.add_theme_font_size_override("font_size", 7)
+	elevation_container.add_child(elev_label)
+
+	_minimap_elevation_bar = TextureRect.new()
+	_minimap_elevation_bar.name = "MiniMapElevationBar"
+	_minimap_elevation_bar.custom_minimum_size = Vector2(8, 120)
+	_minimap_elevation_bar.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_minimap_elevation_bar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_minimap_elevation_bar.stretch_mode = TextureRect.STRETCH_SCALE
+	_minimap_elevation_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	elevation_container.add_child(_minimap_elevation_bar)
+	# Spacer below elevation bar
+	var elev_spacer = Control.new()
+	elev_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	elevation_container.add_child(elev_spacer)
+	map_hbox.add_child(elevation_container)
+
+	container.add_child(map_hbox)
 	add_child(container)
 
 	# Build minimap texture
 	_build_minimap_texture()
-	EventBus.world_generated.connect(func(_w, _h): _build_minimap_texture())
-	EventBus.territory_captured.connect(func(_c, _x, _y): _build_minimap_texture())
+	EventBus.world_generated.connect(func(_w, _h):
+		_build_minimap_texture()
+		_build_elevation_bar()
+	)
+	EventBus.territory_captured.connect(func(_c, _x, _y): _minimap_dirty = true)
 
 
 func _on_minimap_input(event: InputEvent) -> void:
@@ -216,21 +287,30 @@ func _on_minimap_input(event: InputEvent) -> void:
 	if not event.pressed:
 		return
 	var click_pos = event.position
-	var tile_x = int(clamp(click_pos.x / 2.0, 0, ColonyData.world_width - 1))
-	var tile_y = int(clamp(click_pos.y / 2.0, 0, ColonyData.world_height - 1))
+	# Map click position in minimap coordinates to world tile coordinates
+	var minimap_w = 160.0
+	var minimap_h = 120.0
+	var tile_x = int(clamp(click_pos.x / minimap_w * ColonyData.world_width, 0, ColonyData.world_width - 1))
+	var tile_y = int(clamp(click_pos.y / minimap_h * ColonyData.world_height, 0, ColonyData.world_height - 1))
 	# Move camera to this tile
+	var ts_half = ChunkRenderer.TILE_SIZE / 2
 	var cam = get_node_or_null("../Camera2D")
 	if cam:
-		cam.position = Vector2(tile_x * 16 + 8, tile_y * 16 + 8)
+		cam.position = Vector2(tile_x * ChunkRenderer.TILE_SIZE + ts_half, tile_y * ChunkRenderer.TILE_SIZE + ts_half)
 
 
 func _build_minimap_texture() -> void:
-	var img = Image.create(ColonyData.world_width, ColonyData.world_height, false, Image.FORMAT_RGBA8)
+	var minimap_w = 160
+	var minimap_h = 120
+	var img = Image.create(minimap_w, minimap_h, false, Image.FORMAT_RGBA8)
 	var vis_grid = ColonyData.visibility_grid
 	var has_fog = vis_grid.size() == ColonyData.world_width * ColonyData.world_height
-	for y in range(ColonyData.world_height):
-		for x in range(ColonyData.world_width):
-			var tile = ColonyData.get_tile(x, y)
+	for y in range(minimap_h):
+		for x in range(minimap_w):
+			# Sample world tile at the corresponding position
+			var world_x = int(x * ColonyData.world_width / minimap_w)
+			var world_y = int(y * ColonyData.world_height / minimap_h)
+			var tile = ColonyData.get_tile(world_x, world_y)
 			var terrain = tile["terrain"]
 			var owner = tile["owner"]
 			var col = Color(_terrain_base_color(terrain))
@@ -239,7 +319,7 @@ func _build_minimap_texture() -> void:
 				col = col.lerp(Color(nation_color), 0.4)
 			# Apply fog of war greying
 			if has_fog:
-				var vis = vis_grid[y * ColonyData.world_width + x]
+				var vis = vis_grid[world_y * ColonyData.world_width + world_x]
 				if vis == 0:
 					col = col.darkened(0.75)  # unexplored: heavily darkened
 				elif vis == 1:
@@ -254,14 +334,83 @@ func _build_minimap_texture() -> void:
 	var sprite = Sprite2D.new()
 	sprite.name = "MiniMapSprite"
 	sprite.texture = tex
-	sprite.scale = Vector2(2, 2)
-	sprite.position = Vector2(2, 2)
+	sprite.scale = Vector2(1, 1)
+	sprite.position = Vector2.ZERO
 	sprite.centered = false
 	_minimap_rect.add_child(sprite)
 
 
 func _terrain_base_color(terrain: String) -> String:
 	return ColonyData.TERRAINS.get(terrain, {}).get("color", "#000000")
+
+
+# =============================================================================
+# _build_elevation_bar() — Compute and render a vertical elevation profile
+# =============================================================================
+
+func _build_elevation_bar() -> void:
+	if not _minimap_elevation_bar:
+		return
+	var w = ColonyData.world_width
+	var h = ColonyData.world_height
+	if w <= 0 or h <= 0:
+		return
+
+	# Sample elevation every 4 rows for a 120px bar (30 segments)
+	var bar_h = 120
+	var segments = mini(bar_h, max(1, h / 4))
+	var step = max(1, h / segments)
+
+	var img = Image.create(4, bar_h, false, Image.FORMAT_RGBA8)
+	for py in range(bar_h):
+		var seg_y = int(float(py) / bar_h * segments)
+		var world_y = seg_y * step
+		var high_count = 0
+		var total = 0
+		for wx in range(0, w, 8):
+			var tile = ColonyData.get_tile(wx, world_y)
+			var terrain = tile.get("terrain", "water")
+			if terrain == "mountain":
+				high_count += 3
+			elif terrain == "hills":
+				high_count += 2
+			elif terrain == "forest":
+				high_count += 1
+			total += 1
+		var elev = float(high_count) / max(total, 1) / 3.0  # 0.0 to 1.0
+		var color = Color(0.15, 0.15 + elev * 0.4, 0.1 + elev * 0.3)
+		for px in range(4):
+			img.set_pixel(px, bar_h - 1 - py, color)
+
+	var tex = ImageTexture.create_from_image(img)
+	_minimap_elevation_bar.texture = tex
+
+
+# =============================================================================
+# _update_minimap_zlevel() — Update the z-level indicator text
+# =============================================================================
+
+func _update_minimap_zlevel(underground: bool) -> void:
+	if not _minimap_zlevel_label:
+		return
+	_minimap_zlevel_label.text = "Cavern 1" if underground else "Surface"
+
+
+# =============================================================================
+# _on_underground_toggled_minimap() — Handle underground toggle for minimap
+# =============================================================================
+
+func _on_underground_toggled_minimap(enabled: bool) -> void:
+	_update_minimap_zlevel(enabled)
+
+
+func _on_minimap_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> void:
+	_minimap_tick_counter += 1
+	if _minimap_tick_counter >= 120:
+		_minimap_tick_counter = 0
+		if _minimap_dirty:
+			_minimap_dirty = false
+			_build_minimap_texture()
 
 
 # =============================================================================
@@ -338,15 +487,16 @@ func _process(delta: float) -> void:
 		var cam = get_node_or_null("../Camera2D")
 		if cam:
 			var viewport_size = get_viewport().get_visible_rect().size
-			var world_w = ColonyData.world_width * 16.0
-			var world_h = ColonyData.world_height * 16.0
+			var ts = ChunkRenderer.TILE_SIZE
+			var world_w = ColonyData.world_width * float(ts)
+			var world_h = ColonyData.world_height * float(ts)
 			var scale_x = 160.0 / world_w
 			var scale_y = 120.0 / world_h
 			var cam_left = cam.position.x - viewport_size.x * 0.5
 			var cam_top = cam.position.y - viewport_size.y * 0.5
 			cam_left = clamp(cam_left, 0.0, world_w - viewport_size.x)
 			cam_top = clamp(cam_top, 0.0, world_h - viewport_size.y)
-			var base_pos = Vector2(2 + cam_left * scale_x, 2 + cam_top * scale_y)
+			var base_pos = Vector2(cam_left * scale_x, cam_top * scale_y)
 			var base_size = Vector2(viewport_size.x * scale_x, viewport_size.y * scale_y)
 			_minimap_viewport_rect.position = base_pos
 			_minimap_viewport_rect.size = base_size
@@ -362,9 +512,9 @@ func _draw() -> void:
 		var current_color = t["old_color"].lerp(t["target_color"], t["progress"])
 		var alpha = 0.15 + t["progress"] * 0.25
 		current_color.a = alpha
-		var positions: PackedVector2Array = _nation_tile_positions.get(nation_id, PackedVector2Array())
-		for pos in positions:
-			draw_rect(Rect2(pos.x, pos.y, 16, 16), current_color)
+		var rects: Array = _nation_tile_rects.get(nation_id, [])
+		for r in rects:
+			draw_rect(r, current_color)
 
 	_draw_buildings()
 
@@ -397,16 +547,69 @@ func _add_visual_effect(type: String, data: Dictionary) -> void:
 	_effects_dirty = true
 
 
-func _build_nation_tile_positions() -> void:
-	_nation_tile_positions.clear()
+# =============================================================================
+# Right-click context menu — Build context data for a given tile
+# =============================================================================
+
+func _get_tile_context(tile_x: int, tile_y: int) -> Dictionary:
+	var context: Dictionary = {}
+	var tile = ColonyData.get_tile(tile_x, tile_y)
+	if tile.is_empty():
+		return context
+
+	context["terrain"] = tile.get("terrain", "unknown")
+
+	# Check for nation territory
+	var owner: int = tile.get("owner", -1)
+	if owner >= 0 and owner < ColonyData.nations.size():
+		var nation = ColonyData.get_nation(owner)
+		if not nation.is_empty():
+			context["has_owner"] = true
+			context["owner_id"] = owner
+			context["owner_name"] = nation.get("name", "Unknown")
+
+	# Check for buildings on tile
+	var buildings: Array = tile.get("buildings", [])
+	if not buildings.is_empty():
+		context["has_buildings"] = true
+		context["buildings"] = buildings.duplicate()
+
+	# Check for factions on tile
+	if is_inside_tree():
+		var scene = get_tree().current_scene
+		var systems = scene.get_node_or_null("Systems") if scene else null
+		if systems:
+			var fm = systems.get_node_or_null("FactionManager")
+			if fm and fm.has_method("get_factions_on_tile"):
+				var factions_on_tile: Array = fm.get_factions_on_tile(tile_x, tile_y)
+				if not factions_on_tile.is_empty():
+					context["has_faction"] = true
+					context["faction_data"] = factions_on_tile[0]
+					var ftype: String = factions_on_tile[0].get("type", "")
+					context["faction_name"] = ColonyData.FACTIONS.get(ftype, {}).get("name", ftype.capitalize())
+
+	# Check for monster lair on tile
+	for m in ColonyData.world_monsters:
+		if m.get("alive", false) and m.get("lair_x", -1) == tile_x and m.get("lair_y", -1) == tile_y:
+			context["has_monster"] = true
+			context["monster_name"] = m.get("name", "Monster")
+			context["monster_species"] = m.get("species", "unknown")
+			break
+
+	return context
+
+
+func _build_nation_tile_rects() -> void:
+	_nation_tile_rects.clear()
 	for y in range(ColonyData.world_height):
 		for x in range(ColonyData.world_width):
 			var owner = ColonyData.get_tile(x, y)["owner"]
 			if owner < 0:
 				continue
-			if not _nation_tile_positions.has(owner):
-				_nation_tile_positions[owner] = PackedVector2Array()
-			_nation_tile_positions[owner].append(Vector2(x * 16, y * 16))
+			if not _nation_tile_rects.has(owner):
+				_nation_tile_rects[owner] = []
+			var ts = ChunkRenderer.TILE_SIZE
+			_nation_tile_rects[owner].append(Rect2(x * ts, y * ts, ts, ts))
 
 
 func _rebuild_building_cache() -> void:
@@ -431,11 +634,12 @@ func _draw_buildings() -> void:
 	if _building_cache_dirty:
 		_rebuild_building_cache()
 
-	var category_colors = {
-		"economic": Color.GREEN,
-		"military": Color.RED,
-		"religious": Color.GOLD,
-		"infrastructure": Color.BLUE,
+	# Category → material ramp lookup; use mid-ramp color for building dots
+	var material_colors = {
+		"economic": _get_ramp_mid_color("wood_oak", Color.GREEN),
+		"military": _get_ramp_mid_color("stone_granite", Color.RED),
+		"religious": _get_ramp_mid_color("metal_gold", Color.GOLD),
+		"infrastructure": _get_ramp_mid_color("stone_marble", Color.BLUE),
 	}
 
 	for nation_id in _building_cache:
@@ -445,38 +649,55 @@ func _draw_buildings() -> void:
 			var ty: int = int(parts[1])
 			for building_id in _building_cache[nation_id][tile_key]:
 				var category: String = ColonyData.BUILDINGS.get(building_id, {}).get("category", "")
-				var color: Color = category_colors.get(category, Color.WHITE)
-				draw_rect(Rect2(tx * 16 + 7, ty * 16 + 7, 3, 3), color)
+				var color: Color = material_colors.get(category, Color.WHITE)
+				var ts = ChunkRenderer.TILE_SIZE
+				var half = ts / 2
+				draw_rect(Rect2(tx * ts + half - 1, ty * ts + half - 1, 3, 3), color)
+
+
+# =============================================================================
+# _get_ramp_mid_color() — Pick the middle color from a material ramp
+# =============================================================================
+
+func _get_ramp_mid_color(material_key: String, fallback: Color) -> Color:
+	var ramp: Array = PixelPatterns.MATERIAL_RAMPS.get(material_key, [])
+	if ramp.size() >= 5:
+		return Color(ramp[4])  # 5th color out of 9 — distinctive mid-tone
+	return fallback
 
 
 func _draw_war_effect(attacker: int, defender: int, alpha: float) -> void:
 	var col = Color(1.0, 0.2, 0.2, alpha * 0.4)
 	for nation_id in [attacker, defender]:
-		var positions: PackedVector2Array = _nation_tile_positions.get(nation_id, PackedVector2Array())
-		for pos in positions:
-			draw_rect(Rect2(pos.x, pos.y, 16, 16), col)
+		var rects: Array = _nation_tile_rects.get(nation_id, [])
+		for r in rects:
+			draw_rect(r, col)
 
 
 func _draw_trade_effect(from_id: int, to_id: int, alpha: float) -> void:
 	var nat_a = ColonyData.get_nation(from_id)
 	var nat_b = ColonyData.get_nation(to_id)
 	if nat_a.is_empty() or nat_b.is_empty(): return
-	var from_pos = Vector2(nat_a["capital_x"] * 16 + 8, nat_a["capital_y"] * 16 + 8)
-	var to_pos = Vector2(nat_b["capital_x"] * 16 + 8, nat_b["capital_y"] * 16 + 8)
+	var ts = ChunkRenderer.TILE_SIZE
+	var half = ts / 2
+	var from_pos = Vector2(nat_a["capital_x"] * ts + half, nat_a["capital_y"] * ts + half)
+	var to_pos = Vector2(nat_b["capital_x"] * ts + half, nat_b["capital_y"] * ts + half)
 	draw_dashed_line(from_pos, to_pos, Color(1.0, 0.9, 0.2, alpha), 2.0)
 
 
 func _draw_colony_effect(tile_x: int, tile_y: int, alpha: float) -> void:
-	draw_circle(Vector2(tile_x * 16 + 8, tile_y * 16 + 8), 6.0 + (1.0 - alpha) * 4.0, Color(0.2, 1.0, 0.2, alpha))
+	var ts = ChunkRenderer.TILE_SIZE
+	draw_circle(Vector2(tile_x * ts + ts / 2, tile_y * ts + ts / 2), 6.0 + (1.0 - alpha) * 4.0, Color(0.2, 1.0, 0.2, alpha))
 
 
 func _draw_building_effect(tile_x: int, tile_y: int, alpha: float) -> void:
-	draw_rect(Rect2(tile_x * 16, tile_y * 16, 16, 16), Color(1.0, 1.0, 1.0, alpha * 0.5))
+	var ts = ChunkRenderer.TILE_SIZE
+	draw_rect(Rect2(tile_x * ts, tile_y * ts, ts, ts), Color(1.0, 1.0, 1.0, alpha * 0.5))
 
 
 func _draw_alliance_effect(nation_a: int, nation_b: int, alpha: float) -> void:
 	var col = Color(0.3, 0.5, 1.0, alpha * 0.3)
 	for nation_id in [nation_a, nation_b]:
-		var positions: PackedVector2Array = _nation_tile_positions.get(nation_id, PackedVector2Array())
-		for pos in positions:
-			draw_rect(Rect2(pos.x, pos.y, 16, 16), col)
+		var rects: Array = _nation_tile_rects.get(nation_id, [])
+		for r in rects:
+			draw_rect(r, col)

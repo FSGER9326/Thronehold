@@ -4,7 +4,7 @@ extends Node
 enum Relation { HOSTILE = 0, UNFRIENDLY = 25, NEUTRAL = 50, FRIENDLY = 75, ALLIED = 100 }
 enum Treaty { NONE, TRADE_AGREEMENT, DEFENSIVE_PACT, MILITARY_ALLIANCE, VASSALAGE }
 
-const DRIFT_INTERVAL: int = 30
+const DRIFT_INTERVAL: int = 90
 
 var _treaties: Dictionary = {}  # "nationA_nationB" -> Treaty type
 var _drift_counter: int = 0

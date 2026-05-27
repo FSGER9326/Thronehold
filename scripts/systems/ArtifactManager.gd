@@ -1,7 +1,9 @@
 extends Node
 ## Lightweight artifact system — creates legendary items from key events and displays them.
+## Already event-driven (no per-tick processing needed).
 
 var _recent_leader_kill_nation: int = -1  # Track leader kill for battle trophy
+var _tick_counter: int = 0  # Reserved for future per-tick batching
 
 func _ready() -> void:
 	EventBus.battle_fought.connect(_on_battle_fought)

@@ -133,6 +133,9 @@ func _serialize_colony_data() -> Dictionary:
 		# Prophets
 		"prophets": ColonyData.prophets,
 
+		# Tutorial seen flag (persists across sessions)
+		"has_seen_tutorial": ColonyData.has_seen_tutorial,
+
 		# Notification log
 		"notification_log": ColonyData.notification_log,
 
@@ -233,6 +236,8 @@ func _restore_colony_data(c: Dictionary) -> void:
 	ColonyData.prophets = c.get("prophets", [])
 
 	ColonyData.notification_log = c.get("notification_log", [])
+
+	ColonyData.has_seen_tutorial = c.get("has_seen_tutorial", false)
 
 	ColonyData.visibility_grid = c.get("visibility_grid", [])
 

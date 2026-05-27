@@ -54,7 +54,13 @@ func _generate_terrain(width: int, height: int) -> void:
 			else:
 				terrain = "mountain"
 
-			ColonyData.set_tile(x, y, {"terrain": terrain, "resource": "", "owner": -1, "buildings": []})
+			# Assign material for palette swapping (DF-style)
+			var material: String = ""
+			var candidates: Array = PixelPatterns.TERRAIN_MATERIALS.get(terrain, [])
+			if not candidates.is_empty():
+				material = candidates[_rng.randi() % candidates.size()]
+
+			ColonyData.set_tile(x, y, {"terrain": terrain, "resource": "", "owner": -1, "buildings": [], "material": material})
 
 func _generate_noise(width: int, height: int) -> Array[float]:
 	# Simple value noise with octaves
@@ -63,7 +69,7 @@ func _generate_noise(width: int, height: int) -> Array[float]:
 
 	var octaves = 4
 	var persistence = 0.5
-	var scale = 0.012  # 400×300 grand strategy map
+	var scale = 0.008  # 600×450 grand strategy map
 
 	for y in range(height):
 		for x in range(width):
@@ -153,7 +159,13 @@ func _generate_underground_terrain(width: int, height: int) -> void:
 			else:
 				terrain = "caves"
 
-			ColonyData.set_underground_tile(x, y, {"terrain": terrain, "resource": "", "owner": -1, "buildings": []})
+			# Assign material for underground palette swapping
+			var material: String = ""
+			var candidates: Array = PixelPatterns.TERRAIN_MATERIALS.get(terrain, [])
+			if not candidates.is_empty():
+				material = candidates[_rng.randi() % candidates.size()]
+
+			ColonyData.set_underground_tile(x, y, {"terrain": terrain, "resource": "", "owner": -1, "buildings": [], "material": material})
 
 func _generate_underground_resources(_width: int, _height: int) -> void:
 	for y in range(_height):
@@ -169,6 +181,21 @@ func _generate_underground_resources(_width: int, _height: int) -> void:
 
 func _place_nations(width: int, height: int) -> void:
 	ColonyData.nations.clear()
+
+	# Player's race is selected in the class selection screen
+	var player_race = ColonyData.selected_race
+	var race_to_nation: Dictionary = {
+		"dwarf": {"name": "Ironhold", "color": "#c49a3c"},
+		"human": {"name": "Northmark", "color": "#5577cc"},
+		"elf": {"name": "Silverwood", "color": "#7ec8a0"},
+		"orc": {"name": "Bloodfang", "color": "#cc4444"},
+		"halfling": {"name": "Greenfields", "color": "#88cc44"},
+		"goblin": {"name": "Deepgrot", "color": "#996644"},
+		"troll": {"name": "Bogmire", "color": "#66aa44"},
+		"ogre": {"name": "Highpeak", "color": "#886644"},
+		"gnome": {"name": "Sparkgear", "color": "#cc88cc"},
+	}
+	var player_nat = race_to_nation.get(player_race, race_to_nation["human"])
 
 	var nation_defs = [
 		{"name": "Ironhold", "race": "dwarf", "color": "#c49a3c"},
@@ -195,7 +222,25 @@ func _place_nations(width: int, height: int) -> void:
 		{"name": "Fenmire", "race": "troll", "color": "#559933"},
 		{"name": "Highpeak", "race": "ogre", "color": "#886644"},
 		{"name": "Stormpeak", "race": "ogre", "color": "#775533"},
+		# Additional nations for larger world
+		{"name": "Redforge", "race": "dwarf", "color": "#b87a3a"},
+		{"name": "Moonshadow", "race": "elf", "color": "#3a7a6a"},
+		{"name": "Highcastle", "race": "human", "color": "#7a7acc"},
+		{"name": "Rustfang", "race": "orc", "color": "#aa5555"},
+		{"name": "Proudhill", "race": "halfling", "color": "#aadd55"},
+		{"name": "Murkden", "race": "goblin", "color": "#887755"},
+		{"name": "Bronzegear", "race": "gnome", "color": "#ddaadd"},
+		{"name": "Rottenmaw", "race": "troll", "color": "#559944"},
+		{"name": "Stonefist", "race": "ogre", "color": "#997755"},
+		{"name": "Icebeard", "race": "dwarf", "color": "#88aacc"},
+		{"name": "Sunreach", "race": "elf", "color": "#6aaa7a"},
+		{"name": "Ashenfeld", "race": "human", "color": "#556688"},
 	]
+
+	# Override first nation with player's selected race
+	nation_defs[0]["name"] = player_nat["name"]
+	nation_defs[0]["race"] = player_race
+	nation_defs[0]["color"] = player_nat["color"]
 
 	var placed = 0
 	for nd in nation_defs:
@@ -224,16 +269,16 @@ func _place_nations(width: int, height: int) -> void:
 		ColonyData.nations.append(nation)
 
 		# Claim territory around capital
-		for dy in range(-3, 4):
-			for dx in range(-3, 4):
+		for dy in range(-5, 6):
+			for dx in range(-5, 6):
 				var tx = cx + dx
 				var ty = cy + dy
 				if tx < 0 or tx >= width or ty < 0 or ty >= height:
 					continue
 				var t = ColonyData.get_tile(tx, ty)
 				if t["terrain"] != "water" and t["owner"] == -1:
-					if randf() < 0.7:
-						ColonyData.set_tile(tx, ty, {"terrain": t["terrain"], "resource": t["resource"], "owner": nation["id"], "buildings": []})
+					if randf() < 0.8:
+						ColonyData.set_tile(tx, ty, {"terrain": t["terrain"], "resource": t["resource"], "owner": nation["id"], "buildings": [], "material": t.get("material", "")})
 
 		EventBus.nation_created.emit(nation["id"], nation)
 		placed += 1

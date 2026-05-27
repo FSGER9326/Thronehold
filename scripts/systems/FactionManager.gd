@@ -9,7 +9,7 @@ func _ready() -> void:
 
 func _spawn_factions(_w: int, _h: int) -> void:
 	ColonyData.active_factions.clear()
-	var count = randi_range(8, 12)
+	var count = randi_range(22, 32)
 	var faction_types = ColonyData.FACTIONS.keys()
 	for i in range(count):
 		var type_id = faction_types[randi() % faction_types.size()]

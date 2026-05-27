@@ -1,4 +1,5 @@
 @tool
+class_name PixelGenerator
 extends Node
 # =============================================================================
 # Pixel art asset generator for Thronehold.
@@ -13,9 +14,9 @@ const MAX_DIM: int = 256
 # =============================================================================
 
 func _ready() -> void:
-	print("=" * 56)
+	print("=".repeat(56))
 	print("  PixelGenerator — Thronehold pixel art pipeline")
-	print("=" * 56)
+	print("=".repeat(56))
 	print("  Usage (in editor):")
 	print("    $PixelGenerator.generate_all_assets()")
 	print("    $PixelGenerator.generate_terrain_tile('plains')")
@@ -33,7 +34,7 @@ func _ready() -> void:
 	print("    assets/buildings/ — 8×8 building icons")
 	print("    assets/tech/      — 8×8 tech icons")
 	print("    assets/portraits/ — 8×8 leader face portraits")
-	print("=" * 56)
+	print("==".repeat(56))
 
 # =============================================================================
 # CORE UTILITY: Convert color-index array to Image
@@ -155,6 +156,73 @@ func generate_terrain_tile(terrain_type: String) -> Image:
 		pattern["height"]
 	)
 	return img
+
+# =============================================================================
+# PALETTE SWAP IMAGE — DF-style material recoloring
+# Matches each non-transparent pixel to its PALETTE index, then replaces
+# palette indices 1-9 with the corresponding ramp colors.
+# Indices 10-15 keep their default PALETTE values (highlights/shadows).
+# =============================================================================
+
+func palette_swap_image(source: Image, ramp: Array) -> Image:
+	if source.is_empty() or ramp.size() < 9:
+		push_error("PixelGenerator: palette_swap_image requires valid source and 9-color ramp")
+		return source
+	
+	var w = source.get_width()
+	var h = source.get_height()
+	var result = Image.create(w, h, false, Image.FORMAT_RGBA8)
+	
+	# Build reverse palette lookup: "#rrggbb" -> index
+	var reverse_palette: Dictionary = {}
+	for idx in range(1, PixelPatterns.PALETTE.size()):
+		var hex_str: String = PixelPatterns.PALETTE.get(idx, "")
+		if not hex_str.is_empty():
+			reverse_palette[hex_str] = idx
+	
+	# Pre-parse ramp colors into Color objects
+	var ramp_colors: Array[Color] = []
+	for hex_str in ramp:
+		ramp_colors.append(Color(hex_str))
+	
+	for y in range(h):
+		for x in range(w):
+			var pixel: Color = source.get_pixel(x, y)
+			if pixel.a < 0.01:
+				# Transparent — keep as-is (index 0)
+				continue
+			
+			var hex: String = pixel.to_html(false)
+			if not hex.begins_with("#"):
+				hex = "#" + hex
+			
+			var palette_idx: int = reverse_palette.get(hex, -1)
+			if palette_idx > 0 and palette_idx <= ramp_colors.size():
+				result.set_pixel(x, y, ramp_colors[palette_idx - 1])
+			else:
+				# High-index palette color (10-15) or unmatched — keep original
+				result.set_pixel(x, y, pixel)
+	
+	return result
+
+
+# =============================================================================
+# GENERATE TERRAIN TILE WITH MATERIAL
+# Convenience: generates a terrain tile then applies material palette swap.
+# Returns the base terrain tile if material_key is empty or not found.
+# =============================================================================
+
+func generate_material_terrain_tile(terrain_type: String, material_key: String) -> Image:
+	var base = generate_terrain_tile(terrain_type)
+	if base.is_empty() or material_key.is_empty():
+		return base
+	
+	var ramp: Array = PixelPatterns.MATERIAL_RAMPS.get(material_key, [])
+	if ramp.is_empty():
+		return base
+	
+	return palette_swap_image(base, ramp)
+
 
 # =============================================================================
 # GENERATE NATION FLAG
@@ -286,6 +354,23 @@ func generate_building_icon(building_id: String) -> Image:
 	return img
 
 # =============================================================================
+# GENERATE BUILDING ICON WITH MATERIAL
+# Convenience: generates a building icon then applies material palette swap.
+# =============================================================================
+
+func generate_material_building_icon(building_id: String, material_key: String) -> Image:
+	var base = generate_building_icon(building_id)
+	if base.is_empty() or material_key.is_empty():
+		return base
+	
+	var ramp: Array = PixelPatterns.MATERIAL_RAMPS.get(material_key, [])
+	if ramp.is_empty():
+		return base
+	
+	return palette_swap_image(base, ramp)
+
+
+# =============================================================================
 # GENERATE TECH ICON
 # =============================================================================
 
@@ -360,10 +445,10 @@ func _ensure_dir(path: String) -> void:
 func generate_all_assets(output_dir: String = "res://assets/") -> void:
 	"""Generate all terrain tiles, flag presets, deity symbols, building icons, and tech icons."""
 	print("")
-	print("=" * 56)
+	print("==".repeat(56))
 	print("  PixelGenerator: Generating all assets...")
 	print("  Output: %s" % output_dir)
-	print("=" * 56)
+	print("==".repeat(56))
 	
 	var total_files = 0
 	var error_count = 0
@@ -483,9 +568,9 @@ func generate_all_assets(output_dir: String = "res://assets/") -> void:
 	
 	# --- Summary ---
 	print("")
-	print("-" * 56)
+	print("-=".repeat(56))
 	print("  Generation complete: %d files saved, %d errors" % [total_files, error_count])
 	if error_count > 0:
 		push_warning("PixelGenerator: %d asset(s) failed to generate." % error_count)
-	print("-" * 56)
+	print("-=".repeat(56))
 	print("")

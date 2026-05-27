@@ -15,6 +15,7 @@ const STARTING_TRAITS: Dictionary = {
 
 const MAX_ACTIVE_TRAITS: int = 3
 
+var _tick_counter: int = 0
 var _scene_cache: Node
 
 func _ready() -> void:
@@ -23,8 +24,10 @@ func _ready() -> void:
 
 
 func _on_tick_advanced(tick: int, _day: int, _season: String, _year: int) -> void:
-	if tick % 60 != 0:
+	_tick_counter += 1
+	if _tick_counter % 4 != 0:
 		return
+
 	for nation in ColonyData.nations:
 		_process_nation_culture(nation)
 	_spread_culture_between_nations()

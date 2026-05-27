@@ -3,10 +3,28 @@ extends Node
 
 # Tracks production/consumption per nation based on territory
 
+# Cache: rebuilt in a single tile pass every ~10 ticks or when dirty
+var _tile_counts_cache: Dictionary = {}          # {nation_id: {terrain: count}}
+var _building_effects_cache: Dictionary = {}     # {nation_id: {effect_key: total}}
+var _cache_dirty: bool = true
+var _cache_rebuild_tick: int = 0
+const CACHE_REBUILD_INTERVAL: int = 10
+
 func _ready() -> void:
 	EventBus.tick_advanced.connect(_on_tick_advanced)
+	# Mark cache dirty on events that change territory or buildings
+	EventBus.territory_captured.connect(func(_c: int, _x: int, _y: int): _cache_dirty = true)
+	EventBus.building_placed.connect(func(_x: int, _y: int, _b: String, _n: int): _cache_dirty = true)
+	EventBus.building_destroyed.connect(func(_x: int, _y: int, _b: String): _cache_dirty = true)
+	EventBus.world_generated.connect(func(_w: int, _h: int): _cache_dirty = true)
 
-func _on_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> void:
+func _on_tick_advanced(tick: int, _day: int, _season: String, _year: int) -> void:
+	# Rebuild caches every ~10 ticks or when dirty
+	if _cache_dirty or tick - _cache_rebuild_tick >= CACHE_REBUILD_INTERVAL:
+		_rebuild_caches()
+		_cache_rebuild_tick = tick
+		_cache_dirty = false
+
 	for nation in ColonyData.nations:
 		_process_nation_resources(nation)
 		_clamp_resources(nation)
@@ -14,8 +32,7 @@ func _on_tick_advanced(_tick: int, _day: int, _season: String, _year: int) -> vo
 
 func _process_nation_resources(nation: Dictionary) -> void:
 	var data = ColonyData
-	var bm = _get_building_manager()
-	var tiles: Dictionary = bm.get_territory_counts(nation["id"]) if bm else {}
+	var tiles: Dictionary = _tile_counts_cache.get(nation["id"], {})
 	var pop = nation["population"]
 	var race_id: String = nation["primary_race"]
 	var race_data = ColonyData.RACES.get(race_id, {})
@@ -61,8 +78,8 @@ func _process_nation_resources(nation: Dictionary) -> void:
 		metal_prod *= prod_pm
 		gold_prod *= prod_pm
 
-	# --- Building effects ---
-	var bfx: Dictionary = _get_building_effects(nid)
+	# --- Building effects (cached) ---
+	var bfx: Dictionary = _building_effects_cache.get(nid, {})
 	if bfx.has("food"): food_prod *= bfx["food"]
 	if bfx.has("wood"): wood_prod *= bfx["wood"]
 	if bfx.has("stone"): stone_prod *= bfx["stone"]
@@ -148,15 +165,6 @@ func _process_nation_resources(nation: Dictionary) -> void:
 	food_prod *= seasonal_mod["food"]
 	gold_prod *= seasonal_mod["trade"]
 
-	# Apply difficulty resource_rate modifier (final production multiplier before clamping)
-	var diff_settings: Dictionary = ColonyData.DIFFICULTY_SETTINGS.get(ColonyData.difficulty, ColonyData.DIFFICULTY_SETTINGS["normal"])
-	var resource_rate: float = diff_settings.get("resource_rate", 1.0)
-	food_prod *= resource_rate
-	wood_prod *= resource_rate
-	stone_prod *= resource_rate
-	metal_prod *= resource_rate
-	gold_prod *= resource_rate
-
 	# Add to nation resources
 	nation["resources"]["food"] += food_prod
 	nation["resources"]["wood"] += wood_prod
@@ -183,6 +191,32 @@ func _process_nation_resources(nation: Dictionary) -> void:
 		nation["resources"]["food"] = 0.0
 		EventBus.resource_critical.emit(nation["id"], "food", 0.0)
 
+
+func _rebuild_caches() -> void:
+	_tile_counts_cache.clear()
+	_building_effects_cache.clear()
+	var world_w: int = ColonyData.world_width
+	var world_h: int = ColonyData.world_height
+	for y in range(world_h):
+		for x in range(world_w):
+			var tile: Dictionary = ColonyData.get_tile(x, y)
+			var owner: int = tile.get("owner", -1)
+			if owner < 0:
+				continue
+			# Territory tile counts
+			if not _tile_counts_cache.has(owner):
+				_tile_counts_cache[owner] = {}
+			var terrain: String = tile.get("terrain", "")
+			if terrain != "":
+				_tile_counts_cache[owner][terrain] = _tile_counts_cache[owner].get(terrain, 0) + 1
+			# Building effects — accumulate per building on tile
+			if not _building_effects_cache.has(owner):
+				_building_effects_cache[owner] = {}
+			for building_id in tile.get("buildings", []):
+				var bdata: Dictionary = ColonyData.BUILDINGS.get(building_id, {})
+				var bfx: Dictionary = bdata.get("effects", {})
+				for key in bfx:
+					_building_effects_cache[owner][key] = _building_effects_cache[owner].get(key, 0.0) + bfx[key]
 
 func _nation_has_belief(nation_id: int) -> bool:
 	for race_id in ColonyData.RACES:
@@ -283,20 +317,6 @@ func _get_government_bonus(nation: Dictionary, resource_name: String) -> float:
 	var gov_data = ColonyData.GOVERNMENT_TYPES.get(gov, {})
 	var bonuses: Dictionary = gov_data.get("bonuses", {})
 	return bonuses.get(resource_name, 1.0)
-
-
-func _get_building_effects(nation_id: int) -> Dictionary:
-	var effects = {}
-	var bm = _get_building_manager()
-	if not bm:
-		return effects
-	var counts: Dictionary = bm.get_nation_building_counts(nation_id)
-	for building_id in counts:
-		var bdata = ColonyData.BUILDINGS.get(building_id, {})
-		var bfx: Dictionary = bdata.get("effects", {})
-		for key in bfx:
-			effects[key] = effects.get(key, 0.0) + bfx[key] * counts[building_id]
-	return effects
 
 
 func _apply_building_maintenance(nation: Dictionary) -> void:

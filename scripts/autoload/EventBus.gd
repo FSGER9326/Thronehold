@@ -91,6 +91,7 @@ signal era_advanced(nation_id: int, new_era: String)
 # --- Map Interaction ---
 signal tile_clicked(tile_x: int, tile_y: int)
 signal tile_hovered(tile_x: int, tile_y: int)
+signal tile_context_requested(tile_x: int, tile_y: int, context: Dictionary)
 signal underground_toggled(enabled: bool)
 
 # --- Colonies ---
